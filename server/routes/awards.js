@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 
-// Get Actor Awards
+// get actor awards
 router.get('/by-actor/:actorName', async (req, res) => {
     try {
         const { actorName } = req.params;

@@ -1,49 +1,35 @@
 const express = require('express');
 const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const { Pool } = require('pg');
-const config = require('./config');
+const { API_CONFIG } = require('./config');
+
+
+const filmsRouter = require('./routes/films');
+const actorsRouter = require('./routes/actors');
+const directorsRouter = require('./routes/directors');
+const genresRouter = require('./routes/genres');
+const awardsRouter = require('./routes/awards');
 
 const app = express();
 
-// Middleware
 app.use(cors());
-app.use(helmet());
-app.use(morgan('dev'));
 app.use(express.json());
 
-// Database connection
-const pool = new Pool(config.DB_CONFIG);
+app.use('/api/films', filmsRouter);
+app.use('/api/actors', actorsRouter);
+app.use('/api/directors', directorsRouter);
+app.use('/api/genres', genresRouter);
+app.use('/api/awards', awardsRouter);
 
-// Test database connection
-pool.connect()
-  .then(() => console.log('Connected to PostgreSQL database'))
-  .catch(err => console.error('Database connection error:', err));
-
-// Import routes
-const movieRoutes = require('./routes/movies');
-const actorRoutes = require('./routes/actors');
-const directorRoutes = require('./routes/directors');
-const genreRoutes = require('./routes/genres');
-const filmRoutes = require('./routes/films');
-const awardRoutes = require('./routes/awards');
-
-// Use routes
-app.use('/api/movies', movieRoutes);
-app.use('/api/actors', actorRoutes);
-app.use('/api/directors', directorRoutes);
-app.use('/api/genres', genreRoutes);
-app.use('/api/films', filmRoutes);
-app.use('/api/awards', awardRoutes);
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'healthy', message: 'API is running' });
 });
 
-const PORT = config.API_CONFIG.port;
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ error: 'Something went wrong!' });
+});
+
+const PORT = API_CONFIG.port;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+    console.log(`Server is running on port ${PORT}`);
 }); 
