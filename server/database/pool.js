@@ -1,12 +1,11 @@
 const { Pool } = require('pg');
-const config = require('../config');
+const { DB_CONFIG } = require('../config');
 
-const pool = new Pool(config.DB_CONFIG);
-
+const pool = new Pool(DB_CONFIG);
 
 pool.on('error', (err, client) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+    console.error('Unexpected error on idle client', err);
+    process.exit(-1);
 });
 
 module.exports = pool; 
