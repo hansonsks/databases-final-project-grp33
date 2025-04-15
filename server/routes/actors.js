@@ -2,46 +2,67 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 
-// top actor by box office or nominations
+// Get top actors by rating or awards
 router.get('/top', async (req, res) => {
     try {
-        const { sortBy = 'boxOffice', limit = 10 } = req.query;
+        const { sortBy = 'ratings', limit = 10 } = req.query;
         let query;
-        
-        if (sortBy === 'awards') {
+
+        if (sortBy === 'ratings') {
             query = `
-                SELECT 
-                    a.nconst,
-                    a.primaryName as name,
-                    COUNT(DISTINCT o.award_id) as value, 
-                    COUNT(DISTINCT t.tconst) as movies
-                FROM name.basics a
-                LEFT JOIN title.principals p ON a.nconst = p.nconst
-                LEFT JOIN title.basics t ON p.tconst = t.tconst
-                LEFT JOIN oscars o ON t.tconst = o.imdb_id
-                WHERE p.category = 'actor'
-                GROUP BY a.nconst, a.primaryName
-                ORDER BY value DESC
-                LIMIT $1
+                WITH PrincipalsOnActors AS (
+                    SELECT tconst, nconst
+                    FROM public.titleprincipals
+                    WHERE category = 'actor' OR category = 'actress'
+                ),
+                JoinedWithRatings AS (
+                    SELECT pa.tconst, pa.nconst, r.averagerating
+                    FROM PrincipalsOnActors pa
+                    JOIN public.titleratings r ON pa.tconst = r.tconst
+                ),
+                AvgRatingsPerActor AS (
+                    SELECT nconst, AVG(averagerating) as averageratingactor
+                    FROM JoinedWithRatings
+                    GROUP BY nconst
+                    HAVING COUNT(*) >= 3
+                ),
+                RankedActors AS (
+                    SELECT nconst, averageratingactor, 
+                           DENSE_RANK() OVER (ORDER BY averageratingactor DESC) as rank
+                    FROM AvgRatingsPerActor
+                )
+                SELECT nb.primaryname, ra.averageratingactor AS averagerating
+                FROM RankedActors ra
+                JOIN public.namebasics nb ON ra.nconst = nb.nconst
+                WHERE ra.rank <= $1
+                ORDER BY ra.averageratingactor DESC
             `;
-        } else {
+        } else if (sortBy === 'nominations') {
             query = `
-                SELECT 
-                    a.nconst,
-                    a.primaryName as name,
-                    COALESCE(SUM(tm.revenue), 0) as value,
-                    COUNT(DISTINCT t.tconst) as movies
-                FROM name.basics a
-                LEFT JOIN title.principals p ON a.nconst = p.nconst
-                LEFT JOIN title.basics t ON p.tconst = t.tconst
-                LEFT JOIN tmdb tm ON t.tconst = tm.imdb_id
-                WHERE p.category = 'actor'
-                GROUP BY a.nconst, a.primaryName
-                ORDER BY value DESC
-                LIMIT $1
+                WITH OscarsForActors AS (
+                    SELECT nconst, awardid
+                    FROM public.namebasics nb
+                    JOIN public.theoscaraward oa ON nb.nconst = ANY(oa.nomineeids)
+                    WHERE category = 'actor' OR category = 'actress'
+                ),
+                NomCounts AS (
+                    SELECT nconst, COUNT(awardid) AS nominations
+                    FROM OscarsForActors
+                    GROUP BY nconst
+                ),
+                RankedActors AS (
+                    SELECT nconst, nominations, 
+                           DENSE_RANK() OVER (ORDER BY nominations DESC) as rank 
+                    FROM NomCounts
+                )
+                SELECT nb.primaryname, ra.nominations
+                FROM RankedActors ra
+                JOIN public.namebasics nb ON ra.nconst = nb.nconst
+                WHERE ra.rank <= $1
+                ORDER BY ra.nominations DESC
             `;
         }
-        
+
         const result = await pool.query(query, [limit]);
         res.json({ actors: result.rows });
     } catch (err) {
@@ -50,6 +71,92 @@ router.get('/top', async (req, res) => {
     }
 });
 
+// Get actors with most nominated films by decade
+router.get('/by-decade', async (req, res) => {
+    try {
+        const { decade, limit = 3 } = req.query;
+        const query = `
+            WITH actor_films AS (
+                SELECT 
+                    tp.nconst,
+                    nb.primaryname AS actor_name,
+                    tb.tconst,
+                    tb.primarytitle,
+                    tb.startyear,
+                    (tb.startyear / 10) * 10 AS decade
+                FROM 
+                    public.titleprincipals tp
+                JOIN 
+                    public.namebasics nb ON tp.nconst = nb.nconst
+                JOIN 
+                    public.titlebasics tb ON tp.tconst = tb.tconst
+                WHERE 
+                    (tp.category = 'actor' OR tp.category = 'actress')
+                    AND tb.startyear IS NOT NULL
+            ),
+            oscar_nominations AS (
+                SELECT 
+                    filmid,
+                    COUNT(*) AS nomination_count
+                FROM 
+                    public.theoscaraward
+                GROUP BY 
+                    filmid
+            ),
+            actor_nominations AS (
+                SELECT 
+                    af.nconst,
+                    af.actor_name,
+                    af.decade,
+                    COUNT(DISTINCT af.tconst) AS total_films,
+                    COUNT(DISTINCT CASE WHEN on.filmid IS NOT NULL THEN af.tconst END) AS nominated_films
+                FROM 
+                    actor_films af
+                LEFT JOIN 
+                    oscar_nominations on ON af.tconst = on.filmid
+                GROUP BY 
+                    af.nconst, af.actor_name, af.decade
+            ),
+            top_actors_by_decade AS (
+                SELECT 
+                    decade,
+                    nconst,
+                    actor_name,
+                    nominated_films,
+                    total_films,
+                    RANK() OVER (PARTITION BY decade ORDER BY nominated_films DESC) AS decade_rank
+                FROM 
+                    actor_nominations
+                WHERE 
+                    nominated_films > 0
+            )
+            SELECT 
+                decade,
+                actor_name,
+                nominated_films,
+                total_films,
+                ROUND((nominated_films::float / total_films) * 100, 2) AS nomination_percentage
+            FROM 
+                top_actors_by_decade
+            WHERE 
+                decade_rank <= $1
+                ${decade ? 'AND decade = $2' : ''}
+            ORDER BY 
+                decade, decade_rank
+        `;
+
+        const params = [limit];
+        if (decade) params.push(decade);
+        
+        const result = await pool.query(query, params);
+        res.json({ decades: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'An error occurred while fetching actors by decade' });
+    }
+});
+
+// Get actor details
 router.get('/:actorId', async (req, res) => {
     try {
         const { actorId } = req.params;
@@ -57,41 +164,41 @@ router.get('/:actorId', async (req, res) => {
             WITH actor_movies AS (
                 SELECT 
                     t.tconst,
-                    t.primaryTitle as title,
-                    t.startYear as year,
-                    r.averageRating,
+                    t.primarytitle as title,
+                    t.startyear as year,
+                    r.averagerating,
                     tm.revenue,
                     o.category,
-                    o.year as awardYear,
-                    o.isWinner
-                FROM name.basics a
-                JOIN title.principals p ON a.nconst = p.nconst
-                JOIN title.basics t ON p.tconst = t.tconst
-                LEFT JOIN title.ratings r ON t.tconst = r.tconst
-                LEFT JOIN tmdb tm ON t.tconst = tm.imdb_id
-                LEFT JOIN oscars o ON t.tconst = o.imdb_id
-                WHERE a.nconst = $1 AND p.category = 'actor'
+                    o.year as awardyear,
+                    o.iswinner
+                FROM public.namebasics a
+                JOIN public.titleprincipals p ON a.nconst = p.nconst
+                JOIN public.titlebasics t ON p.tconst = t.tconst
+                LEFT JOIN public.titleratings r ON t.tconst = r.tconst
+                LEFT JOIN public.tmdb tm ON t.tconst = tm.tconst
+                LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid
+                WHERE a.nconst = $1 AND (p.category = 'actor' OR p.category = 'actress')
             )
             SELECT 
                 a.nconst,
-                a.primaryName as name,
-                COUNT(DISTINCT CASE WHEN am.isWinner THEN am.tconst END) as totalAwards,
-                COUNT(DISTINCT am.tconst) as totalNominations,
-                COALESCE(SUM(am.revenue), 0) as totalBoxOffice,
-                AVG(am.averageRating) as averageRating,
+                a.primaryname as name,
+                COUNT(DISTINCT CASE WHEN am.iswinner THEN am.tconst END) as totalawards,
+                COUNT(DISTINCT am.tconst) as totalnominations,
+                COALESCE(SUM(am.revenue), 0) as totalboxoffice,
+                AVG(am.averagerating) as averagerating,
                 json_agg(
                     json_build_object(
                         'tconst', am.tconst,
                         'title', am.title,
                         'year', am.year,
-                        'averageRating', am.averageRating,
+                        'averagerating', am.averagerating,
                         'revenue', am.revenue,
                         'awards', (
                             SELECT json_agg(
                                 json_build_object(
                                     'category', am2.category,
-                                    'year', am2.awardYear,
-                                    'isWinner', am2.isWinner
+                                    'year', am2.awardyear,
+                                    'iswinner', am2.iswinner
                                 )
                             )
                             FROM actor_movies am2
@@ -99,10 +206,10 @@ router.get('/:actorId', async (req, res) => {
                         )
                     )
                 ) as movies
-            FROM name.basics a
+            FROM public.namebasics a
             LEFT JOIN actor_movies am ON true
             WHERE a.nconst = $1
-            GROUP BY a.nconst, a.primaryName
+            GROUP BY a.nconst, a.primaryname
         `;
         
         const result = await pool.query(query, [actorId]);
@@ -113,125 +220,6 @@ router.get('/:actorId', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while fetching actor details' });
-    }
-});
-
-router.get('/snubbed', async (req, res) => {
-    try {
-        const { limit = 10, minNominations = 5 } = req.query;
-        const query = `
-            WITH actor_awards AS (
-                SELECT 
-                    a.nconst,
-                    a.primaryName as name,
-                    COUNT(DISTINCT CASE WHEN o.isWinner THEN o.award_id END) as wins,
-                    COUNT(DISTINCT o.award_id) as nominations
-                FROM name.basics a
-                JOIN title.principals p ON a.nconst = p.nconst
-                JOIN title.basics t ON p.tconst = t.tconst
-                JOIN oscars o ON t.tconst = o.imdb_id
-                WHERE p.category = 'actor'
-                GROUP BY a.nconst, a.primaryName
-                HAVING COUNT(DISTINCT o.award_id) >= $1
-            )
-            SELECT 
-                nconst,
-                name,
-                nominations,
-                wins,
-                CASE 
-                    WHEN nominations > 0 THEN wins::float / nominations
-                    ELSE 0 
-                END as winRatio
-            FROM actor_awards
-            ORDER BY winRatio ASC
-            LIMIT $2
-        `;
-        
-        const result = await pool.query(query, [minNominations, limit]);
-        res.json({ actors: result.rows });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'An error occurred while fetching snubbed actors' });
-    }
-});
-
-router.get('/flops', async (req, res) => {
-    try {
-        const { limit = 10, minMovies = 5 } = req.query;
-        const query = `
-            WITH actor_movies AS (
-                SELECT 
-                    a.nconst,
-                    a.primaryName as name,
-                    COUNT(DISTINCT t.tconst) as movieCount,
-                    AVG(tm.revenue) as averageBoxOffice
-                FROM name.basics a
-                JOIN title.principals p ON a.nconst = p.nconst
-                JOIN title.basics t ON p.tconst = t.tconst
-                JOIN tmdb tm ON t.tconst = tm.imdb_id
-                WHERE p.category = 'actor'
-                GROUP BY a.nconst, a.primaryName
-                HAVING COUNT(DISTINCT t.tconst) >= $1
-            )
-            SELECT 
-                nconst,
-                name,
-                movieCount,
-                averageBoxOffice
-            FROM actor_movies
-            ORDER BY averageBoxOffice ASC
-            LIMIT $2
-        `;
-        
-        const result = await pool.query(query, [minMovies, limit]);
-        res.json({ actors: result.rows });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'An error occurred while fetching flop actors' });
-    }
-});
-
-router.get('/top-rated', async (req, res) => {
-    try {
-        const { limit = 20, minFilms = 5, minVotes = 5000 } = req.query;
-        const query = `
-            WITH actor_ratings AS (
-                SELECT 
-                    a.nconst,
-                    a.primaryName as name,
-                    COUNT(DISTINCT t.tconst) as filmCount,
-                    AVG(r.averageRating) as averageRating,
-                    SUM(r.numVotes) as totalVotes,
-                    COUNT(DISTINCT CASE WHEN o.isWinner THEN o.award_id END) as oscarWins,
-                    array_agg(DISTINCT t.primaryTitle ORDER BY r.averageRating DESC LIMIT 3) as topRatedFilms
-                FROM name.basics a
-                JOIN title.principals p ON a.nconst = p.nconst
-                JOIN title.basics t ON p.tconst = t.tconst
-                JOIN title.ratings r ON t.tconst = r.tconst
-                LEFT JOIN oscars o ON t.tconst = o.imdb_id
-                WHERE p.category = 'actor'
-                GROUP BY a.nconst, a.primaryName
-                HAVING COUNT(DISTINCT t.tconst) >= $1 AND SUM(r.numVotes) >= $2
-            )
-            SELECT 
-                nconst,
-                name,
-                filmCount,
-                averageRating,
-                totalVotes,
-                oscarWins,
-                topRatedFilms
-            FROM actor_ratings
-            ORDER BY averageRating DESC
-            LIMIT $3
-        `;
-        
-        const result = await pool.query(query, [minFilms, minVotes, limit]);
-        res.json({ actors: result.rows });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'An error occurred while fetching top-rated actors' });
     }
 });
 

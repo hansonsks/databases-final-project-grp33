@@ -9,7 +9,7 @@ router.get('/highest-roi', async (req, res) => {
         const query = `
             WITH film_financials AS (
                 SELECT 
-                    t.imdb_id AS tconst,
+                    t.tconst,
                     t.budget,
                     t.revenue,
                     CASE 
@@ -17,7 +17,7 @@ router.get('/highest-roi', async (req, res) => {
                         ELSE NULL
                     END AS roi
                 FROM 
-                    tmdb t
+                    public.tmdb t
                 WHERE 
                     t.budget > 1000000
                     AND t.revenue > 0
@@ -25,54 +25,51 @@ router.get('/highest-roi', async (req, res) => {
             film_details AS (
                 SELECT 
                     b.tconst,
-                    b.primaryTitle,
-                    b.startYear,
-                    r.averageRating,
-                    r.numVotes,
+                    b.primarytitle,
+                    b.startyear,
+                    r.averagerating,
+                    r.numvotes,
                     ff.budget,
                     ff.revenue,
                     ff.roi
                 FROM 
-                    title.basics b
+                    public.titlebasics b
                 JOIN 
                     film_financials ff ON b.tconst = ff.tconst
                 LEFT JOIN 
-                    title.ratings r ON b.tconst = r.tconst
-                WHERE 
-                    r.numVotes > 10000
-                    AND b.startYear >= $1
-                    AND b.startYear <= $2
+                    public.titleratings r ON b.tconst = r.tconst
+                WHERE r.numvotes > 10000
             ),
             yearly_top_roi AS (
                 SELECT 
-                    startYear,
+                    startyear,
                     tconst,
-                    primaryTitle,
-                    averageRating,
+                    primarytitle,
+                    averagerating,
                     budget,
                     revenue,
                     roi,
-                    RANK() OVER (PARTITION BY startYear ORDER BY roi DESC) AS roi_rank
+                    RANK() OVER (PARTITION BY startyear ORDER BY roi DESC) AS roi_rank
                 FROM 
                     film_details
             )
             SELECT 
-                yt.startYear AS year,
-                yt.primaryTitle AS film_title,
-                yt.averageRating AS imdb_rating,
+                yt.startyear AS year,
+                yt.primarytitle AS film_title,
+                yt.averagerating AS imdb_rating,
                 yt.budget,
                 yt.revenue,
                 ROUND(yt.roi::numeric, 2) AS return_on_investment,
                 EXISTS (
                     SELECT 1
-                    FROM the_oscar_award o
-                    WHERE o.filmId = yt.tconst
-                    AND o.isWinner = TRUE
+                    FROM public.theoscaraward o
+                    WHERE o.filmid = yt.tconst
+                    AND o.iswinner = TRUE
                 ) AS won_oscar,
                 (
-                    SELECT string_agg(n.primaryName, ', ')
-                    FROM title.principals p
-                    JOIN name.basics n ON p.nconst = n.nconst
+                    SELECT string_agg(n.primaryname, ', ')
+                    FROM public.titleprincipals p
+                    JOIN public.namebasics n ON p.nconst = n.nconst
                     WHERE p.tconst = yt.tconst
                     AND p.category = 'director'
                 ) AS director
@@ -80,13 +77,18 @@ router.get('/highest-roi', async (req, res) => {
                 yearly_top_roi yt
             WHERE 
                 roi_rank = 1
+                AND startyear BETWEEN $1 AND $2
             ORDER BY 
-                startYear DESC
+                yt.roi DESC
+                
             LIMIT $3
         `;
 
         const result = await pool.query(query, [yearStart, yearEnd, limit]);
-        res.json({ years: result.rows });
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No films found' });
+        }
+        res.json({ films: result.rows });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while fetching films with highest ROI' });
@@ -97,28 +99,27 @@ router.get('/by-actor/:actorName', async (req, res) => {
     try {
         const { actorName } = req.params;
         const query = `
-            WITH TargetNconst AS (
-                SELECT nconst
-                FROM name.basics
-                WHERE (category = 'actor' OR category = 'actress') 
-                AND primaryName = $1
-            ),
-            TargetTconsts AS (
-                SELECT tconst
-                FROM title.principals
-                JOIN TargetNconst ON title.principals.nconst = TargetNconst.nconst
-            )
-            SELECT DISTINCT 
+            SELECT 
                 t.tconst,
-                t.primaryTitle as title,
-                t.startYear as year,
-                r.averageRating,
+                t.primarytitle AS title,
+                t.startyear AS year,
+                r.averagerating,
                 tm.revenue
-            FROM title.basics t
-            JOIN TargetTconsts ON t.tconst = TargetTconsts.tconst
-            LEFT JOIN title.ratings r ON t.tconst = r.tconst
-            LEFT JOIN tmdb tm ON t.tconst = tm.imdb_id
-            ORDER BY t.startYear DESC
+            FROM 
+                public.namebasics n
+            JOIN 
+                public.titleprincipals p ON n.nconst = p.nconst
+            JOIN 
+                public.titlebasics t ON p.tconst = t.tconst
+            LEFT JOIN 
+                public.titleratings r ON t.tconst = r.tconst
+            LEFT JOIN 
+                public.tmdb tm ON t.tconst = tm.tconst
+            WHERE 
+                n.primaryname = $1
+                AND p.category IN ('actor', 'actress')
+            ORDER BY 
+                t.startyear DESC
         `;
 
         const result = await pool.query(query, [actorName]);
@@ -138,19 +139,19 @@ router.get('/top-by-genre/:genreName', async (req, res) => {
         const { limit = 10 } = req.query;
         const query = `
             WITH GenreMovies AS (
-                SELECT tconst, primaryTitle, startYear
-                FROM title.basics
+                SELECT tconst, primarytitle
+                FROM public.titlebasics
                 WHERE $1 = ANY(genres)
             )
             SELECT 
                 t.tconst,
-                t.primaryTitle as title,
-                t.startYear as year,
-                r.averageRating,
+                t.primarytitle AS title,
+                t.startyear AS year,
+                r.averagerating,
                 tm.revenue
             FROM GenreMovies t
-            JOIN tmdb tm ON t.tconst = tm.imdb_id
-            LEFT JOIN title.ratings r ON t.tconst = r.tconst
+            JOIN public.tmdb tm ON t.tconst = tm.tconst
+            LEFT JOIN public.titleratings r ON t.tconst = r.tconst
             ORDER BY tm.revenue DESC
             LIMIT $2
         `;
