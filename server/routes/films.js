@@ -2,25 +2,25 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 
-//complex query
+//complex query, orders by roi
 router.get('/highest-roi', async (req, res) => {
     try {
         const { yearStart = 2000, yearEnd = 2023, limit = 10 } = req.query;
         const query = `
             WITH film_financials AS (
                 SELECT 
-                    t.tconst,
-                    t.budget,
-                    t.revenue,
+                    m.imdb_id as tconst,
+                    m.budget,
+                    m.revenue,
                     CASE 
-                        WHEN t.budget > 0 THEN (t.revenue::float / t.budget)
+                        WHEN m.budget > 0 THEN (m.revenue::float / m.budget)
                         ELSE NULL
                     END AS roi
                 FROM 
-                    public.tmdb t
+                    public.tmdb m
                 WHERE 
-                    t.budget > 1000000
-                    AND t.revenue > 0
+                    m.budget > 1000000
+                    AND m.revenue > 0
             ),
             film_details AS (
                 SELECT 
@@ -80,7 +80,6 @@ router.get('/highest-roi', async (req, res) => {
                 AND startyear BETWEEN $1 AND $2
             ORDER BY 
                 yt.roi DESC
-                
             LIMIT $3
         `;
 
@@ -94,6 +93,7 @@ router.get('/highest-roi', async (req, res) => {
         res.status(500).json({ error: 'An error occurred while fetching films with highest ROI' });
     }
 });
+
 //all the movies a certain actor has been in
 router.get('/by-actor/:actorName', async (req, res) => {
     try {
@@ -104,7 +104,7 @@ router.get('/by-actor/:actorName', async (req, res) => {
                 t.primarytitle AS title,
                 t.startyear AS year,
                 r.averagerating,
-                tm.revenue
+                m.revenue
             FROM 
                 public.namebasics n
             JOIN 
@@ -114,7 +114,7 @@ router.get('/by-actor/:actorName', async (req, res) => {
             LEFT JOIN 
                 public.titleratings r ON t.tconst = r.tconst
             LEFT JOIN 
-                public.tmdb tm ON t.tconst = tm.tconst
+                public.tmdb m ON t.tconst = m.imdb_id
             WHERE 
                 n.primaryname = $1
                 AND p.category IN ('actor', 'actress')
@@ -132,6 +132,7 @@ router.get('/by-actor/:actorName', async (req, res) => {
         res.status(500).json({ error: 'An error occurred while fetching films by actor' });
     }
 });
+
 //top movies by genre
 router.get('/top-by-genre/:genreName', async (req, res) => {
     try {
@@ -148,11 +149,11 @@ router.get('/top-by-genre/:genreName', async (req, res) => {
                 t.primarytitle AS title,
                 t.startyear AS year,
                 r.averagerating,
-                tm.revenue
+                m.revenue
             FROM GenreMovies t
-            JOIN public.tmdb tm ON t.tconst = tm.tconst
+            JOIN public.tmdb m ON t.tconst = m.imdb_id
             LEFT JOIN public.titleratings r ON t.tconst = r.tconst
-            ORDER BY tm.revenue DESC
+            ORDER BY m.revenue DESC
             LIMIT $2
         `;
 
