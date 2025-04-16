@@ -10,19 +10,19 @@ router.get('/top', async (req, res) => {
         const query = `
             WITH genre_stats AS (
                 SELECT 
-                    g.genre,
-                    SUM(t.revenue) as total_revenue,
-                    COUNT(DISTINCT a.awardid) as total_awards
+                    unnest(t.genres) as genre,
+                    SUM(m.revenue) as total_revenue,
+                    COUNT(DISTINCT o.awardid) as total_awards
                 FROM 
-                    public.genres g
-                    JOIN public.tmdb t ON g.tconst = t.tconst
-                    LEFT JOIN public.theoscaraward a ON g.tconst = a.filmid
+                    public.titlebasics t
+                    JOIN public.tmdb m ON t.tconst = m.imdb_id
+                    LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid
                 WHERE 
-                    ${startYear ? 't.release_date >= $1 AND' : ''}
-                    ${endYear ? 't.release_date <= $2 AND' : ''}
+                    ${startYear ? 't.startyear >= $1 AND' : ''}
+                    ${endYear ? 't.startyear <= $2 AND' : ''}
                     TRUE
                 GROUP BY 
-                    g.genre
+                    unnest(t.genres)
             )
             SELECT 
                 genre,
@@ -59,17 +59,16 @@ router.get('/highest-grossing', async (req, res) => {
         const query = `
             WITH ranked_films AS (
                 SELECT 
-                    g.genre,
-                    t.title,
-                    t.revenue,
-                    ROW_NUMBER() OVER (PARTITION BY g.genre ORDER BY t.revenue DESC) as rank
+                    unnest(t.genres) as genre,
+                    t.primarytitle as title,
+                    m.revenue,
+                    ROW_NUMBER() OVER (PARTITION BY unnest(t.genres) ORDER BY m.revenue DESC) as rank
                 FROM 
-                    public.genres g
-                    JOIN public.tmdb t ON g.tconst = t.tconst
-                    LEFT JOIN public.theoscaraward a ON g.tconst = a.filmid
+                    public.titlebasics t
+                    JOIN public.tmdb m ON t.tconst = m.imdb_id
                 WHERE 
-                    ${startYear ? 't.release_date >= $1 AND' : ''}
-                    ${endYear ? 't.release_date <= $2 AND' : ''}
+                    ${startYear ? 't.startyear >= $1 AND' : ''}
+                    ${endYear ? 't.startyear <= $2 AND' : ''}
                     TRUE
             )
             SELECT 
@@ -106,18 +105,18 @@ router.get('/:genre', async (req, res) => {
         const query = `
             WITH genre_movies AS (
                 SELECT 
-                    g.tconst,
-                    t.title,
-                    t.revenue,
-                    COUNT(DISTINCT a.awardid) as award_count
+                    t.tconst,
+                    t.primarytitle as title,
+                    m.revenue,
+                    COUNT(DISTINCT o.awardid) as award_count
                 FROM 
-                    public.genres g
-                    JOIN public.tmdb t ON g.tconst = t.tconst
-                    LEFT JOIN public.theoscaraward a ON g.tconst = a.filmid
+                    public.titlebasics t
+                    JOIN public.tmdb m ON t.tconst = m.imdb_id
+                    LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid
                 WHERE 
-                    g.genre = $1
+                    $1 = ANY(t.genres)
                 GROUP BY 
-                    g.tconst, t.title, t.revenue
+                    t.tconst, t.primarytitle, m.revenue
             )
             SELECT 
                 tconst,

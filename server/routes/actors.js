@@ -42,7 +42,7 @@ router.get('/top', async (req, res) => {
                 WITH OscarsForActors AS (
                     SELECT nconst, awardid
                     FROM public.namebasics nb
-                    JOIN public.theoscaraward oa ON nb.nconst = ANY(oa.nomineeids)
+                    JOIN public.theoscaraward oa ON nb.nconst::text = ANY(oa.nomineeids)
                     WHERE category = 'actor' OR category = 'actress'
                 ),
                 NomCounts AS (
@@ -135,7 +135,7 @@ router.get('/by-decade', async (req, res) => {
                 actor_name,
                 nominated_films,
                 total_films,
-                ROUND((nominated_films::float / total_films) * 100, 2) AS nomination_percentage
+                ROUND((nominated_films::numeric / total_films) * 100, 2) AS nomination_percentage
             FROM 
                 top_actors_by_decade
             WHERE 
@@ -167,7 +167,7 @@ router.get('/:actorId', async (req, res) => {
                     t.primarytitle as title,
                     t.startyear as year,
                     r.averagerating,
-                    tm.revenue,
+                    m.revenue,
                     o.category,
                     o.year as awardyear,
                     o.iswinner
@@ -175,7 +175,7 @@ router.get('/:actorId', async (req, res) => {
                 JOIN public.titleprincipals p ON a.nconst = p.nconst
                 JOIN public.titlebasics t ON p.tconst = t.tconst
                 LEFT JOIN public.titleratings r ON t.tconst = r.tconst
-                LEFT JOIN public.tmdb tm ON t.tconst = tm.tconst
+                LEFT JOIN public.tmdb m ON t.tconst = m.imdb_id
                 LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid
                 WHERE a.nconst = $1 AND (p.category = 'actor' OR p.category = 'actress')
             )

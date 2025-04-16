@@ -8,22 +8,28 @@ router.get('/by-actor/:actorName', async (req, res) => {
         const { actorName } = req.params;
         
         const query = `
-            WITH TargetNconst AS (
-                SELECT nconst
-                FROM name.basics
-                WHERE (primaryProfession && ARRAY['actor', 'actress'])
-                AND primaryName = $1
+            WITH actor_nconst AS (
+                SELECT nconst::text
+                FROM public.namebasics
+                WHERE ('actor' = ANY(primaryprofession) OR 'actress' = ANY(primaryprofession))
+                AND primaryname = $1
+                LIMIT 1
             )
             SELECT 
                 o.category,
                 o.year,
-                o.filmTitle,
-                o.isWinner
+                o.filmtitle,
+                o.iswinner,
+                o.filmid,
+                o.nomineeids
             FROM 
-                the_oscar_award o,
-                TargetNconst tn
+                public.theoscaraward o
             WHERE 
-                tn.nconst = ANY(o.nomineeIds)
+                EXISTS (
+                    SELECT 1 
+                    FROM actor_nconst an 
+                    WHERE an.nconst = ANY(o.nomineeids)
+                )
             ORDER BY 
                 o.year DESC
         `;
