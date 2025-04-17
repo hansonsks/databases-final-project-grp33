@@ -25,5 +25,5 @@ module.exports = {
     auth: {
         jwtSecret: process.env.JWT_SECRET || 'AndyEmilyHansonOlivia',
         jwtExpiry: process.env.JWT_EXPIRY || '24h'
-      }
+    }
 }; 

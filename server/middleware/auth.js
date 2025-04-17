@@ -1,8 +1,7 @@
 const jwt = require('jsonwebtoken');
 const config = require('../config');
-console.log('JWT Secret:', process.env.JWT_SECRET);
-console.log('JWT Expiry:', process.env.JWT_EXPIRY);
-console.log('Config expiry:', config.auth.jwtExpiry);
+console.log("JWT secret:", process.env.JWT_SECRET);
+console.log("JWT expiry:", process.env.JWT_EXPIRY);
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
