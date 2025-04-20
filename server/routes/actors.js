@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database/pool');
 
-// Get top actors by rating or nominations
+// Get top actors by rating, nominations, or box office
 router.get('/top', async (req, res) => {
   try {
     const { sortBy = 'ratings', limit = 10 } = req.query;
@@ -10,24 +10,85 @@ router.get('/top', async (req, res) => {
 
     if (sortBy === 'ratings') {
       query = `
+        WITH actor_films AS (
+          SELECT 
+            p.nconst,
+            r.averagerating,
+            r.numvotes
+          FROM public.titleprincipals p
+          JOIN public.titleratings r ON p.tconst = r.tconst
+          WHERE (p.category = 'actor' OR p.category = 'actress')
+          AND r.numvotes > 1000
+        ),
+        actor_ratings AS (
+          SELECT 
+            nconst,
+            AVG(averagerating) as avg_rating,
+            COUNT(*) as film_count
+          FROM actor_films
+          GROUP BY nconst
+          HAVING COUNT(*) >= 3
+        )
         SELECT 
           nb.nconst,
           nb.primaryname, 
-          ar.avg_rating AS averagerating
-        FROM actor_avg_ratings ar
-        JOIN namebasics nb ON ar.nconst = nb.nconst
+          ar.avg_rating AS averagerating,
+          ar.film_count
+        FROM actor_ratings ar
+        JOIN public.namebasics nb ON ar.nconst = nb.nconst
         ORDER BY ar.avg_rating DESC
         LIMIT $1
       `;
     } else if (sortBy === 'nominations') {
       query = `
+        WITH actor_nominations AS (
+          SELECT 
+            unnest(o.nomineeids::integer[]) as nconst,
+            COUNT(*) as nomination_count
+          FROM public.theoscaraward o
+          WHERE (o.category LIKE '%Actor%' OR o.category LIKE '%Actress%')
+          GROUP BY unnest(o.nomineeids::integer[])
+        )
         SELECT 
-          anc.nconst,
+          nb.nconst,
           nb.primaryname,
-          anc.nominations
-        FROM actor_nomination_counts anc
-        JOIN namebasics nb ON nb.nconst = anc.nconst
-        ORDER BY anc.nominations DESC
+          an.nomination_count as nominations
+        FROM actor_nominations an
+        JOIN public.namebasics nb ON an.nconst::text = nb.nconst::text
+        ORDER BY an.nomination_count DESC
+        LIMIT $1
+      `;
+    } else if (sortBy === 'boxOffice') {
+      query = `
+        WITH actor_movies AS (
+          SELECT 
+            p.nconst,
+            t.tconst,
+            m.revenue
+          FROM public.titleprincipals p
+          JOIN public.titlebasics t ON p.tconst = t.tconst
+          JOIN public.tmdb m ON t.tconst = m.imdb_id
+          WHERE (p.category = 'actor' OR p.category = 'actress')
+          AND m.revenue IS NOT NULL
+          AND m.revenue > 0
+        ),
+        actor_totals AS (
+          SELECT 
+            nconst,
+            SUM(revenue) as total_revenue,
+            COUNT(tconst) as movie_count
+          FROM actor_movies
+          GROUP BY nconst
+          HAVING COUNT(tconst) >= 3
+        )
+        SELECT 
+          nb.nconst,
+          nb.primaryname,
+          at.total_revenue as boxofficetotal,
+          at.movie_count as moviecount
+        FROM actor_totals at
+        JOIN public.namebasics nb ON at.nconst = nb.nconst
+        ORDER BY at.total_revenue DESC
         LIMIT $1
       `;
     }
@@ -45,25 +106,79 @@ router.get('/by-decade', async (req, res) => {
   try {
     const { decade, limit = 10 } = req.query;
     let query = `
+      WITH actor_films AS (
+        SELECT 
+          tp.nconst,
+          nb.primaryname AS actor_name,
+          tb.tconst,
+          tb.primarytitle,
+          tb.startyear,
+          (tb.startyear / 10) * 10 AS decade
+        FROM 
+          public.titleprincipals tp
+        JOIN 
+          public.namebasics nb ON tp.nconst = nb.nconst
+        JOIN 
+          public.titlebasics tb ON tp.tconst = tb.tconst
+        WHERE 
+          (tp.category = 'actor' OR tp.category = 'actress')
+          AND tb.startyear IS NOT NULL
+      ),
+      oscar_nominations AS (
+        SELECT 
+          filmid,
+          COUNT(*) AS nomination_count
+        FROM 
+          public.theoscaraward
+        GROUP BY 
+          filmid
+      ),
+      actor_nominations AS (
+        SELECT 
+          af.nconst,
+          af.actor_name,
+          af.decade,
+          COUNT(DISTINCT af.tconst) AS total_films,
+          COUNT(DISTINCT CASE WHEN oscar_nom.filmid IS NOT NULL THEN af.tconst END) AS nominated_films
+        FROM 
+          actor_films af
+        LEFT JOIN 
+          oscar_nominations oscar_nom ON af.tconst = oscar_nom.filmid
+        GROUP BY 
+          af.nconst, af.actor_name, af.decade
+      ),
+      top_actors_by_decade AS (
+        SELECT 
+          decade,
+          nconst,
+          actor_name,
+          nominated_films,
+          total_films,
+          RANK() OVER (PARTITION BY decade ORDER BY nominated_films DESC) AS decade_rank
+        FROM 
+          actor_nominations
+        WHERE 
+          nominated_films > 0
+      )
       SELECT 
         decade,
-        actor_name,
         nconst,
+        actor_name,
         nominated_films,
         total_films,
         ROUND((nominated_films::numeric / total_films) * 100, 2) AS nomination_percentage
-      FROM top_actors_by_decade_view
-      WHERE decade_rank <= $1
+      FROM 
+        top_actors_by_decade
+      WHERE 
+        decade_rank <= $1
+        ${decade ? 'AND decade = $2' : ''}
+      ORDER BY 
+        decade, decade_rank
+      LIMIT 30
     `;
 
     const params = [limit];
-
-    if (decade && /^\d+$/.test(decade)) {
-      query += ` AND decade = $2`;
-      params.push(parseInt(decade, 10));
-    }
-
-    query += ` ORDER BY decade, decade_rank`;
+    if (decade) params.push(decade);
 
     const result = await pool.query(query, params);
     res.json({ decades: result.rows });
@@ -78,7 +193,11 @@ router.get('/decades', async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT DISTINCT decade
-      FROM top_actors_by_decade_view
+      FROM (
+        SELECT (startyear / 10) * 10 AS decade
+        FROM public.titlebasics
+        WHERE startyear IS NOT NULL
+      ) as decades
       ORDER BY decade ASC
     `);
     res.json({ decades: result.rows.map(row => row.decade) });
@@ -107,8 +226,9 @@ router.get('/:actorId', async (req, res) => {
         JOIN public.titlebasics t ON p.tconst = t.tconst
         LEFT JOIN public.titleratings r ON t.tconst = r.tconst
         LEFT JOIN public.tmdb m ON t.tconst = m.imdb_id
-        LEFT JOIN theoscaraward o ON t.tconst = o.filmid AND o.nomineeids @> ARRAY[nconst::text]
+        LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid AND o.nomineeids @> ARRAY[$1::text]
         WHERE p.nconst = $1 AND (p.category = 'actor' OR p.category = 'actress')
+        LIMIT 100
       )
       SELECT 
         nb.nconst,
@@ -117,28 +237,28 @@ router.get('/:actorId', async (req, res) => {
         COUNT(DISTINCT am.tconst) as totalnominations,
         COALESCE(SUM(am.revenue), 0) as totalboxoffice,
         AVG(am.averagerating) as averagerating,
-        JSON_AGG(
-          JSON_BUILD_OBJECT(
+        json_agg(
+          json_build_object(
             'tconst', am.tconst,
             'title', am.title,
             'year', am.year,
             'averagerating', am.averagerating,
             'revenue', am.revenue,
             'awards', (
-              SELECT JSON_AGG(
-                JSON_BUILD_OBJECT(
+              SELECT json_agg(
+                json_build_object(
                   'category', am2.category,
                   'year', am2.awardyear,
                   'iswinner', am2.iswinner
                 )
               )
               FROM actor_movies am2
-              WHERE am2.tconst = am.tconst
+              WHERE am2.tconst = am.tconst AND am2.category IS NOT NULL
             )
           )
         ) AS movies
       FROM public.namebasics nb
-      JOIN actor_movies am ON nb.nconst = $1
+      LEFT JOIN actor_movies am ON true
       WHERE nb.nconst = $1
       GROUP BY nb.nconst, nb.primaryname
     `;

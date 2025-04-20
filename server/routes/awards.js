@@ -50,4 +50,45 @@ router.get('/by-actor/:actorName', async (req, res) => {
     }
 });
 
-module.exports = router; 
+// Get awards by category
+router.get('/by-category', async (req, res) => {
+    try {
+        const { category, limit = 10 } = req.query;
+        
+        if (!category) {
+            return res.status(400).json({ error: 'Category parameter is required' });
+        }
+        
+        const query = `
+            SELECT 
+                o.filmtitle,
+                o.year,
+                o.iswinner,
+                o.filmid,
+                o.awardid
+            FROM 
+                public.theoscaraward o
+            WHERE 
+                o.category = $1
+            ORDER BY 
+                o.year DESC, o.iswinner DESC
+            LIMIT $2
+        `;
+
+        const result = await pool.query(query, [category, limit]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'No films found for this category' });
+        }
+
+        res.json({ 
+            category,
+            films: result.rows 
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'An error occurred while fetching category films' });
+    }
+});
+
+module.exports = router;

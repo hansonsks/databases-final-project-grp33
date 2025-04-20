@@ -51,7 +51,7 @@ router.put('/profile', authenticateToken, async (req, res) => {
     const { name, email } = req.body;
     
     const result = await pool.query(
-      'UPDATE users SET name = $1, email = $2, updated_at = NOW() WHERE user_id = $3 RETURNING user_id, username, email, name',
+      'UPDATE users SET name = $1, email = $2 WHERE user_id = $3 RETURNING user_id, username, email, name',
       [name, email, userId]
     );
     
@@ -120,45 +120,102 @@ router.get('/favorites', authenticateToken, async (req, res) => {
     const userId = req.user.userId;
     const { type } = req.query;
     
-    let query;
-    
     if (type) {
       // Convert plural to singular for database
       const itemType = type.slice(0, -1);
       
-      query = `
-        SELECT uf.favorite_id, uf.item_id, uf.item_type
-        FROM user_favorites uf
-        WHERE uf.user_id = $1 AND uf.item_type = $2
-      `;
+      let query;
+      
+      if (itemType === 'actor') {
+        // Get actor favorites with names
+        query = `
+          SELECT 
+            uf.favorite_id, 
+            uf.item_id, 
+            uf.item_type,
+            nb.primaryname as name
+          FROM user_favorites uf
+          LEFT JOIN public.namebasics nb ON uf.item_id = nb.nconst
+          WHERE uf.user_id = $1 AND uf.item_type = $2
+        `;
+      } else if (itemType === 'director') {
+        // Get director favorites with names
+        query = `
+          SELECT 
+            uf.favorite_id, 
+            uf.item_id, 
+            uf.item_type,
+            nb.primaryname as name
+          FROM user_favorites uf
+          LEFT JOIN public.namebasics nb ON uf.item_id = nb.nconst
+          WHERE uf.user_id = $1 AND uf.item_type = $2
+        `;
+      } else if (itemType === 'film') {
+        // Get film favorites with titles
+        query = `
+          SELECT 
+            uf.favorite_id, 
+            uf.item_id, 
+            uf.item_type,
+            tb.primarytitle as title,
+            tb.startyear as year
+          FROM user_favorites uf
+          LEFT JOIN public.titlebasics tb ON uf.item_id = tb.tconst
+          WHERE uf.user_id = $1 AND uf.item_type = $2
+        `;
+      }
       
       const result = await pool.query(query, [userId, itemType]);
-      
-      // Here you would join with appropriate tables to get names/titles
-      // This is a simplified version
       
       res.json({
         [type]: result.rows
       });
     } else {
-      // Get all types of favorites
-      query = `
-        SELECT uf.favorite_id, uf.item_id, uf.item_type
+      // Get all types of favorites with names/titles
+      const actorsQuery = `
+        SELECT 
+          uf.favorite_id, 
+          uf.item_id, 
+          uf.item_type,
+          nb.primaryname as name
         FROM user_favorites uf
-        WHERE uf.user_id = $1
+        LEFT JOIN public.namebasics nb ON uf.item_id = nb.nconst
+        WHERE uf.user_id = $1 AND uf.item_type = 'actor'
       `;
       
-      const result = await pool.query(query, [userId]);
+      const directorsQuery = `
+        SELECT 
+          uf.favorite_id, 
+          uf.item_id, 
+          uf.item_type,
+          nb.primaryname as name
+        FROM user_favorites uf
+        LEFT JOIN public.namebasics nb ON uf.item_id = nb.nconst
+        WHERE uf.user_id = $1 AND uf.item_type = 'director'
+      `;
       
-      // Group by type
-      const actors = result.rows.filter(f => f.item_type === 'actor');
-      const directors = result.rows.filter(f => f.item_type === 'director');
-      const films = result.rows.filter(f => f.item_type === 'film');
+      const filmsQuery = `
+        SELECT 
+          uf.favorite_id, 
+          uf.item_id, 
+          uf.item_type,
+          tb.primarytitle as title,
+          tb.startyear as year
+        FROM user_favorites uf
+        LEFT JOIN public.titlebasics tb ON uf.item_id = tb.tconst
+        WHERE uf.user_id = $1 AND uf.item_type = 'film'
+      `;
+      
+      const [actorsResult, directorsResult, filmsResult] = await Promise.all([
+        pool.query(actorsQuery, [userId]),
+        pool.query(directorsQuery, [userId]),
+        pool.query(filmsQuery, [userId])
+      ]);
       
       res.json({
-        actors,
-        directors,
-        films
+        actors: actorsResult.rows,
+        directors: directorsResult.rows,
+        films: filmsResult.rows
       });
     }
   } catch (err) {

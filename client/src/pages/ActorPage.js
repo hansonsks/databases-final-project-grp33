@@ -1,163 +1,231 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Container, Typography, Paper, Box,
-  Tabs, Tab, Table, TableHead, TableRow, TableCell,
-  TableBody, CircularProgress, Alert, Select, MenuItem
+  Container, Typography, Paper, Box, CircularProgress, Alert,
+  Table, TableHead, TableRow, TableCell, TableBody,
+  Select, MenuItem, FormControl, InputLabel
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 
 const ActorPage = () => {
-  const [tab, setTab] = useState(0);
-  const [topActors, setTopActors] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [actors, setActors] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [decades, setDecades] = useState([]);
-  const [selectedDecade, setSelectedDecade] = useState('');
-  const [actorsByDecade, setActorsByDecade] = useState([]);
+  const [sortBy, setSortBy] = useState('ratings');
+  const [decade, setDecade] = useState(null);
+  const [dotCount, setDotCount] = useState(1);
   const navigate = useNavigate();
-
-  const fetchActors = async (sortBy = 'ratings') => {
-    setLoading(true);
-    setError('');
-    try {
-      const response = await api.get(`/api/actors/top?sortBy=${sortBy}`);
-      setTopActors(response.data.actors || []);
-    } catch (err) {
-      setError('Failed to load actors');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchDecades = async () => {
-    try {
-      const response = await api.get('/api/actors/decades');
-      const decadeList = response.data.decades || [];
-      setDecades(decadeList);
-      if (decadeList.length > 0) {
-        setSelectedDecade(decadeList[0]);
-      }
-    } catch (err) {
-      console.error('Failed to load decades', err);
-    }
-  };
-
-  const fetchActorsByDecade = async (decade) => {
-    if (!decade) return;
-    setLoading(true);
-    setError('');
-    try {
-      const response = await api.get(`/api/actors/by-decade?decade=${decade}`);
-      console.log("API response:", response.data.decades); // Add this line
-      setActorsByDecade(response.data.decades || []);
-    } catch (err) {
-      setError('Failed to load actors by decade');
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
   
+  const decades = [1930, 1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
+  // Animate the dots for loading indicator
   useEffect(() => {
-    fetchActors('ratings');
-    fetchDecades();
-  }, []);
-
-  useEffect(() => {
-    if (tab === 2 && selectedDecade) {
-      fetchActorsByDecade(selectedDecade);
+    let interval;
+    if (loading) {
+      interval = setInterval(() => {
+        setDotCount(prev => prev < 3 ? prev + 1 : 1);
+      }, 500);
     }
-  }, [tab, selectedDecade]);
+    return () => clearInterval(interval);
+  }, [loading]);
 
-  const handleTabChange = (_, newValue) => {
-    setTab(newValue);
-    if (newValue === 0) fetchActors('ratings');
-    else if (newValue === 1) fetchActors('nominations');
+  // Fetch data when sortBy changes
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        let response;
+        
+        if (sortBy === 'decade') {
+          // Fetch actors by decade
+          if (decade) {
+            response = await api.get(`/api/actors/by-decade?decade=${decade}&limit=10`);
+            setActors(response.data.decades || []);
+          } else {
+            // Default to 2010s if no decade selected
+            response = await api.get(`/api/actors/by-decade?decade=2010&limit=10`);
+            setActors(response.data.decades || []);
+            setDecade(2010);
+          }
+        } else {
+          // Fetch top actors by sortBy criteria
+          response = await api.get(`/api/actors/top?sortBy=${sortBy}&limit=10`);
+          setActors(response.data.actors || []);
+        }
+      } catch (err) {
+        setError(`Failed to load actors: ${err.message}`);
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [sortBy, decade]);
+
+  const handleSortByChange = (event) => {
+    const newSortBy = event.target.value;
+    setSortBy(newSortBy);
+    
+    // Reset decade if changing from 'decade' sorting
+    if (newSortBy !== 'decade') {
+      setDecade(null);
+    } else if (newSortBy === 'decade' && !decade) {
+      // Set a default decade if choosing decade sorting
+      setDecade(2010);
+    }
   };
 
-  const displayedActors = tab === 2
-    ? [...actorsByDecade].sort((a, b) =>
-        (b.nomination_percentage || 0) - (a.nomination_percentage || 0)
-      )
-    : topActors;
+  const handleDecadeChange = (event) => {
+    setDecade(event.target.value);
+  };
+
+  const renderActorsTable = () => {
+    if (sortBy === 'decade') {
+      return (
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell><strong>Name</strong></TableCell>
+              <TableCell align="right"><strong>Nominated Films</strong></TableCell>
+              <TableCell align="right"><strong>Total Films</strong></TableCell>
+              <TableCell align="right"><strong>Nomination %</strong></TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {actors.map((actor, index) => {
+              const actorName = actor.actor_name || actor.primaryname || "Unknown";
+              const actorId = actor.nconst || 'nm0000001';
+              
+              return (
+                <TableRow
+                  key={index}
+                  hover
+                  onClick={() => navigate(`/actors/${actorId}`)}
+                  sx={{ cursor: 'pointer' }}
+                >
+                  <TableCell>{actorName}</TableCell>
+                  <TableCell align="right">{actor.nominated_films}</TableCell>
+                  <TableCell align="right">{actor.total_films}</TableCell>
+                  <TableCell align="right">{actor.nomination_percentage}%</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      );
+    } else {
+      return (
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell><strong>Name</strong></TableCell>
+              <TableCell align="right">
+                <strong>{sortBy === 'ratings' 
+                  ? 'Average Rating' 
+                  : sortBy === 'nominations'
+                  ? 'Nominations'
+                  : 'Box Office Total'}</strong>
+              </TableCell>
+              {sortBy === 'boxOffice' && (
+                <TableCell align="right"><strong>Movies</strong></TableCell>
+              )}
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {actors.map((actor, index) => {
+              const actorName = actor.primaryname || "Unknown";
+              const actorId = actor.nconst || 'nm0000001';
+              
+              return (
+                <TableRow
+                  key={index}
+                  hover
+                  onClick={() => navigate(`/actors/${actorId}`)}
+                  sx={{ cursor: 'pointer' }}
+                >
+                  <TableCell>{actorName}</TableCell>
+                  <TableCell align="right">
+                    {sortBy === 'ratings' 
+                      ? (parseFloat(actor.averagerating).toFixed(2) || 'N/A') 
+                      : sortBy === 'nominations'
+                      ? (actor.nominations || 'N/A')
+                      : `$${(parseInt(actor.boxofficetotal || 0) / 1000000).toFixed(1)}M`}
+                  </TableCell>
+                  {sortBy === 'boxOffice' && (
+                    <TableCell align="right">{actor.moviecount}</TableCell>
+                  )}
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      );
+    }
+  };
+
+  const renderLoadingMessage = () => {
+    const dots = '.'.repeat(dotCount);
+    
+    return (
+      <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight="200px">
+        <CircularProgress size={40} sx={{ mb: 2 }} />
+        <Typography variant="h6" color="text.secondary">
+          Crunching data, please wait{dots}
+        </Typography>
+      </Box>
+    );
+  };
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper elevation={3} sx={{ p: 4 }}>
         <Box display="flex" alignItems="center" mb={2}>
           <PersonIcon sx={{ fontSize: 40, mr: 2, color: 'primary.main' }} />
-          <Typography variant="h4">Top Actors</Typography>
+          <Typography variant="h4">Actors</Typography>
         </Box>
 
-        <Tabs value={tab} onChange={handleTabChange} sx={{ mb: 2 }}>
-          <Tab label="By Rating" />
-          <Tab label="By Nominations" />
-          <Tab label="By Decade" />
-        </Tabs>
-
-        {tab === 2 && (
-          <Box mb={2}>
-            <Typography variant="subtitle1">Select Decade</Typography>
+        <Box mb={3}>
+          <FormControl fullWidth sx={{ mb: 2 }}>
+            <InputLabel>Sort By</InputLabel>
             <Select
-              fullWidth
-              value={selectedDecade}
-              onChange={(e) => setSelectedDecade(e.target.value)}
-              displayEmpty
+              value={sortBy}
+              label="Sort By"
+              onChange={handleSortByChange}
             >
-              <MenuItem value="" disabled>Select a decade</MenuItem>
-              {decades.map((dec) => (
-                <MenuItem key={dec} value={dec}>{dec}s</MenuItem>
-              ))}
+              <MenuItem value="ratings">Average Rating</MenuItem>
+              <MenuItem value="nominations">Number of Nominations</MenuItem>
+              <MenuItem value="boxOffice">Box Office Revenue</MenuItem>
+              <MenuItem value="decade">By Decade</MenuItem>
             </Select>
-          </Box>
-        )}
+          </FormControl>
+
+          {sortBy === 'decade' && (
+            <FormControl fullWidth>
+              <InputLabel>Select Decade</InputLabel>
+              <Select
+                value={decade || 2010}
+                label="Select Decade"
+                onChange={handleDecadeChange}
+              >
+                {decades.map((dec) => (
+                  <MenuItem key={dec} value={dec}>{dec}s</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          )}
+        </Box>
 
         {loading ? (
-          <Box display="flex" justifyContent="center" alignItems="center" minHeight="200px">
-            <CircularProgress />
-          </Box>
+          renderLoadingMessage()
         ) : error ? (
           <Alert severity="error">{error}</Alert>
         ) : (
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableCell><strong>Name</strong></TableCell>
-                <TableCell align="right">
-                  <strong>{tab === 0 ? 'Avg Rating' : tab === 1 ? 'Nominations' : 'Percentage of Films with Oscar Nominations'}</strong>
-                </TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {displayedActors.map((actor, index) => {
-                console.log(actor); // helpful for debugging the response
-                const actorId = actor.nconst || actor['nb.nconst'];
-                const displayName = actor.primaryname || actor.actor_name;
-                const value =
-                  tab === 0 ? (actor.averagerating?.toFixed(2) ?? 'N/A') :
-                  tab === 1 ? (actor.nominations ?? 'N/A') :
-                  isNaN(Number(actor.nomination_percentage))
-                    ? '0.00%'
-                    : `${Number(actor.nomination_percentage).toFixed(2)}%`
-
-                return (
-                  <TableRow
-                    key={index}
-                    hover
-                    onClick={() => navigate(`/actors/${actorId}`)}
-                    sx={{ cursor: 'pointer' }}
-                  >
-                    <TableCell>{displayName}</TableCell>
-                    <TableCell align="right">{value}</TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+          <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
+            {renderActorsTable()}
+          </Box>
         )}
       </Paper>
     </Container>

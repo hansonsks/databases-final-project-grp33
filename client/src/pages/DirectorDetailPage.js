@@ -10,10 +10,10 @@ import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
 import api from '../utils/api';
 import { AuthContext } from '../context/AuthContext';
 
-const ActorDetailPage = () => {
-  const { actorId } = useParams();
+const DirectorDetailPage = () => {
+  const { directorId } = useParams();
   const navigate = useNavigate();
-  const [actor, setActor] = useState(null);
+  const [director, setDirector] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [inFavorites, setInFavorites] = useState(false);
@@ -22,10 +22,10 @@ const ActorDetailPage = () => {
   const { currentUser } = useContext(AuthContext);
 
   useEffect(() => {
-    const loadActor = async () => {
+    const loadDirector = async () => {
       try {
-        const response = await api.get(`/api/actors/${actorId}`);
-        const data = response.data.actor;
+        const response = await api.get(`/api/directors/${directorId}`);
+        const data = response.data.director;
 
         // Process movies to ensure awards are properly structured
         if (data && data.movies) {
@@ -38,9 +38,14 @@ const ActorDetailPage = () => {
                 awards: []
               };
             }
-            const existing = deduplicatedMovies[movie.tconst].awards.map(a => `${a.category}-${a.year}`);
+            // Add awards if they exist
             if (movie.awards) {
+              const existing = deduplicatedMovies[movie.tconst].awards.map(a => 
+                a ? `${a.category}-${a.year}` : ''
+              );
               for (const award of movie.awards) {
+                // Skip null awards
+                if (!award) continue;
                 const key = `${award.category}-${award.year}`;
                 if (!existing.includes(key)) {
                   deduplicatedMovies[movie.tconst].awards.push(award);
@@ -50,15 +55,15 @@ const ActorDetailPage = () => {
           }
 
           // Convert back to array and sort by year (newest first)
-          data.movies = Object.values(deduplicatedMovies).sort((a, b) => 
-            (b.year || 0) - (a.year || 0)
-          );
+          data.movies = Object.values(deduplicatedMovies)
+            .filter(movie => movie.tconst) // Filter out any invalid movies
+            .sort((a, b) => (b.year || 0) - (a.year || 0));
         }
         
-        setActor(data);
+        setDirector(data);
       } catch (err) {
-        console.error('Failed to load actor:', err);
-        setError('Failed to load actor details');
+        console.error('Failed to load director:', err);
+        setError('Failed to load director details');
       } finally {
         setLoading(false);
       }
@@ -67,13 +72,13 @@ const ActorDetailPage = () => {
     const loadFavorites = async () => {
       if (!currentUser) return;
       try {
-        const response = await api.get('/api/users/favorites?type=actors');
-        const favoritesList = response.data.actors || [];
+        const response = await api.get('/api/users/favorites?type=directors');
+        const favoritesList = response.data.directors || [];
         setFavorites(favoritesList);
         
-        // Check if this actor is in favorites
+        // Check if this director is in favorites
         const isInFavorites = favoritesList.some(
-          f => f.item_id === parseInt(actorId) || f.item_id === actorId
+          f => f.item_id === parseInt(directorId) || f.item_id === directorId
         );
         setInFavorites(isInFavorites);
       } catch (err) {
@@ -81,9 +86,9 @@ const ActorDetailPage = () => {
       }
     };
 
-    loadActor();
+    loadDirector();
     loadFavorites();
-  }, [actorId, currentUser]);
+  }, [directorId, currentUser]);
 
   const handleToggleFavorite = async () => {
     if (!currentUser) {
@@ -99,7 +104,7 @@ const ActorDetailPage = () => {
       if (inFavorites) {
         // Find the favorite_id
         const favorite = favorites.find(f => 
-          f.item_id === parseInt(actorId) || f.item_id === actorId
+          f.item_id === parseInt(directorId) || f.item_id === directorId
         );
         if (favorite) {
           await api.delete(`/api/users/favorites/${favorite.favorite_id}`);
@@ -111,8 +116,8 @@ const ActorDetailPage = () => {
           setInFavorites(false);
         }
       } else {
-        await api.post('/api/users/favorites/actors', { 
-          itemId: parseInt(actorId) || actorId
+        await api.post('/api/users/favorites/directors', { 
+          itemId: parseInt(directorId) || directorId
         });
         setSnackbar({
           open: true,
@@ -143,10 +148,10 @@ const ActorDetailPage = () => {
     );
   }
 
-  if (error || !actor) {
+  if (error || !director) {
     return (
       <Container sx={{ mt: 4 }}>
-        <Alert severity="error">{error || 'Actor not found.'}</Alert>
+        <Alert severity="error">{error || 'Director not found.'}</Alert>
       </Container>
     );
   }
@@ -155,7 +160,7 @@ const ActorDetailPage = () => {
     <Container sx={{ mt: 4 }}>
       <Paper elevation={3} sx={{ p: 4 }}>
         <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Typography variant="h4" gutterBottom>{actor.name}</Typography>
+          <Typography variant="h4" gutterBottom>{director.name}</Typography>
           <Button 
             variant={inFavorites ? "contained" : "outlined"}
             color="secondary"
@@ -166,38 +171,47 @@ const ActorDetailPage = () => {
           </Button>
         </Box>
         
-        <Typography variant="subtitle1">Average Rating: {actor.averagerating?.toFixed(2) || 'N/A'}</Typography>
-        <Typography variant="subtitle1">Total Awards: {actor.totalawards || 0}</Typography>
-        <Typography variant="subtitle1">
-          Total Box Office: {actor.totalboxoffice > 0 ? `$${Number(actor.totalboxoffice).toLocaleString()}` : 'Unknown'}
-        </Typography>
+        <Box sx={{ my: 2 }}>
+          <Typography variant="subtitle1">Average Rating: {director.averagerating ? parseFloat(director.averagerating).toFixed(2) : 'N/A'}</Typography>
+          <Typography variant="subtitle1">Total Awards: {director.totalawards || 0}</Typography>
+          <Typography variant="subtitle1">
+            Total Box Office: {director.totalboxoffice > 0 ? `$${Number(director.totalboxoffice).toLocaleString()}` : 'Unknown'}
+          </Typography>
+        </Box>
 
         <Divider sx={{ my: 3 }} />
-        <Typography variant="h6">Filmography ({actor.movies?.length || 0} films)</Typography>
+        <Typography variant="h6">Filmography ({director.movies?.length || 0} films)</Typography>
 
-        {actor.movies && actor.movies.map((movie, idx) => (
-          <Box key={idx} sx={{ my: 3 }}>
-            <Typography variant="subtitle1">
-              <strong>{movie.title}</strong> ({movie.year || 'N/A'})
-            </Typography>
-            <Typography>Rating: {movie.averagerating ? parseFloat(movie.averagerating).toFixed(1) : 'N/A'}</Typography>
-            <Typography>
-              Revenue: {movie.revenue && movie.revenue > 0 ? `$${Number(movie.revenue).toLocaleString()}` : 'Unknown'}
-            </Typography>
+        <Box sx={{ maxHeight: '600px', overflow: 'auto' }}>
+          {director.movies && director.movies.map((movie, idx) => (
+            <Box key={idx} sx={{ my: 3 }}>
+              <Typography variant="subtitle1">
+                <strong>{movie.title}</strong> ({movie.year || 'N/A'})
+              </Typography>
+              <Typography>Rating: {movie.averagerating ? parseFloat(movie.averagerating).toFixed(1) : 'N/A'}</Typography>
+              <Typography>
+                Revenue: {movie.revenue && movie.revenue > 0 ? `$${Number(movie.revenue).toLocaleString()}` : 'Unknown'}
+              </Typography>
 
-            {movie.awards && movie.awards.length > 0 && (
-              <List dense>
-                {movie.awards.map((award, i) => (
-                  <ListItem key={i}>
-                    <ListItemText
-                      primary={`${award.category} (${award.year}) - ${award.iswinner ? 'Winner' : 'Nominated'}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            )}
-          </Box>
-        ))}
+              {movie.awards && movie.awards.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>Awards:</Typography>
+                  <List dense>
+                    {movie.awards.map((award, i) => (
+                      award && (
+                        <ListItem key={i}>
+                          <ListItemText
+                            primary={`${award.category} (${award.year}) - ${award.iswinner ? 'Winner' : 'Nominated'}`}
+                          />
+                        </ListItem>
+                      )
+                    ))}
+                  </List>
+                </>
+              )}
+            </Box>
+          ))}
+        </Box>
       </Paper>
 
       <Snackbar 
@@ -214,4 +228,4 @@ const ActorDetailPage = () => {
   );
 };
 
-export default ActorDetailPage;
+export default DirectorDetailPage;

@@ -77,7 +77,7 @@ router.get('/highest-roi', async (req, res) => {
                 yearly_top_roi yt
             WHERE 
                 roi_rank = 1
-                AND startyear BETWEEN $1 AND $2
+                AND yt.startyear BETWEEN $1 AND $2
             ORDER BY 
                 yt.roi DESC
             LIMIT $3
@@ -99,6 +99,17 @@ router.get('/by-actor/:actorName', async (req, res) => {
     try {
         const { actorName } = req.params;
         const query = `
+            WITH TargetNconst AS (
+                SELECT nconst
+                FROM public.namebasics
+                WHERE primaryname = $1
+            ),
+            TargetTconsts AS (
+                SELECT tconst
+                FROM public.titleprincipals tp
+                JOIN TargetNconst tn ON tp.nconst = tn.nconst
+                WHERE tp.category IN ('actor', 'actress')
+            )
             SELECT 
                 t.tconst,
                 t.primarytitle AS title,
@@ -106,18 +117,13 @@ router.get('/by-actor/:actorName', async (req, res) => {
                 r.averagerating,
                 m.revenue
             FROM 
-                public.namebasics n
+                public.titlebasics t
             JOIN 
-                public.titleprincipals p ON n.nconst = p.nconst
-            JOIN 
-                public.titlebasics t ON p.tconst = t.tconst
+                TargetTconsts tt ON t.tconst = tt.tconst
             LEFT JOIN 
                 public.titleratings r ON t.tconst = r.tconst
             LEFT JOIN 
                 public.tmdb m ON t.tconst = m.imdb_id
-            WHERE 
-                n.primaryname = $1
-                AND p.category IN ('actor', 'actress')
             ORDER BY 
                 t.startyear DESC
         `;
@@ -145,21 +151,29 @@ router.get('/top-by-genre/:genreName', async (req, res) => {
                 WHERE $1 = ANY(genres)
             )
             SELECT 
-                t.tconst,
-                t.primarytitle AS title,
-                t.startyear AS year,
+                gm.tconst,
+                gm.primarytitle AS title,
+                tb.startyear AS year,
                 r.averagerating,
                 m.revenue
-            FROM GenreMovies t
-            JOIN public.tmdb m ON t.tconst = m.imdb_id
-            LEFT JOIN public.titleratings r ON t.tconst = r.tconst
-            ORDER BY m.revenue DESC
+            FROM 
+                GenreMovies gm
+            JOIN 
+                public.titlebasics tb ON gm.tconst = tb.tconst
+            LEFT JOIN 
+                public.tmdb m ON gm.tconst = m.imdb_id
+            LEFT JOIN 
+                public.titleratings r ON gm.tconst = r.tconst
+            WHERE 
+                m.revenue IS NOT NULL
+            ORDER BY 
+                m.revenue DESC
             LIMIT $2
         `;
 
         const result = await pool.query(query, [genreName, limit]);
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Genre not found or no films found' });
+            return res.status(404).json({ error: `No films found for genre: ${genreName}` });
         }
         res.json({ genre: genreName, films: result.rows });
     } catch (err) {
@@ -168,4 +182,4 @@ router.get('/top-by-genre/:genreName', async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;

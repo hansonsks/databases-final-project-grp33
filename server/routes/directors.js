@@ -31,7 +31,7 @@ router.get('/top', async (req, res) => {
                            DENSE_RANK() OVER (ORDER BY averageratingdirector DESC) as rank
                     FROM AvgRatingsPerDirector
                 )
-                SELECT nb.primaryname, ra.averageratingdirector AS averagerating
+                SELECT nb.nconst, nb.primaryname, ra.averageratingdirector AS averagerating
                 FROM RankedDirectors ra
                 JOIN public.namebasics nb ON ra.nconst = nb.nconst
                 WHERE ra.rank <= $1
@@ -55,11 +55,64 @@ router.get('/top', async (req, res) => {
                            DENSE_RANK() OVER (ORDER BY nominations DESC) as rank 
                     FROM NomCounts
                 )
-                SELECT nb.primaryname, rd.nominations
+                SELECT nb.nconst, nb.primaryname, rd.nominations
                 FROM RankedDirectors rd
                 JOIN public.namebasics nb ON rd.nconst = nb.nconst
                 WHERE rd.rank <= $1
                 ORDER BY rd.nominations DESC
+            `;
+        } else if (sortBy === 'boxOffice') {
+            query = `
+                WITH DirectorFilms AS (
+                    SELECT 
+                        tp.nconst,
+                        tb.tconst,
+                        m.revenue
+                    FROM 
+                        public.titleprincipals tp
+                    JOIN 
+                        public.titlebasics tb ON tp.tconst = tb.tconst
+                    JOIN 
+                        public.tmdb m ON tb.tconst = m.imdb_id
+                    WHERE 
+                        tp.category = 'director'
+                        AND m.revenue IS NOT NULL
+                        AND m.revenue > 0
+                ),
+                DirectorTotals AS (
+                    SELECT 
+                        nconst,
+                        SUM(revenue) as total_revenue,
+                        COUNT(tconst) as movie_count
+                    FROM 
+                        DirectorFilms
+                    GROUP BY 
+                        nconst
+                    HAVING 
+                        COUNT(tconst) >= 2
+                ),
+                RankedDirectors AS (
+                    SELECT 
+                        nconst,
+                        total_revenue,
+                        movie_count,
+                        DENSE_RANK() OVER (ORDER BY total_revenue DESC) as rank
+                    FROM 
+                        DirectorTotals
+                )
+                SELECT 
+                    nb.nconst, 
+                    nb.primaryname,
+                    rd.total_revenue as boxOfficeTotal,
+                    rd.movie_count as movieCount
+                FROM 
+                    RankedDirectors rd
+                JOIN 
+                    public.namebasics nb ON rd.nconst = nb.nconst
+                WHERE 
+                    rd.rank <= $1
+                ORDER BY 
+                    rd.total_revenue DESC
             `;
         }
 
@@ -109,11 +162,11 @@ router.get('/by-decade', async (req, res) => {
                     df.director_name,
                     df.decade,
                     COUNT(DISTINCT df.tconst) AS total_films,
-                    COUNT(DISTINCT CASE WHEN on.filmid IS NOT NULL THEN df.tconst END) AS nominated_films
+                    COUNT(DISTINCT CASE WHEN oscar_nom.filmid IS NOT NULL THEN df.tconst END) AS nominated_films
                 FROM 
                     director_films df
                 LEFT JOIN 
-                    oscar_nominations on ON df.tconst = on.filmid
+                    oscar_nominations oscar_nom ON df.tconst = oscar_nom.filmid
                 GROUP BY 
                     df.nconst, df.director_name, df.decade
             ),
@@ -132,6 +185,7 @@ router.get('/by-decade', async (req, res) => {
             )
             SELECT 
                 decade,
+                nconst,
                 director_name,
                 nominated_films,
                 total_films,
@@ -143,6 +197,7 @@ router.get('/by-decade', async (req, res) => {
                 ${decade ? 'AND decade = $2' : ''}
             ORDER BY 
                 decade, decade_rank
+            LIMIT 30
         `;
 
         const params = [limit];
@@ -178,6 +233,7 @@ router.get('/:directorId', async (req, res) => {
                 LEFT JOIN public.tmdb m ON t.tconst = m.imdb_id
                 LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid
                 WHERE a.nconst = $1 AND p.category = 'director'
+                LIMIT 100
             )
             SELECT 
                 a.nconst,
@@ -202,7 +258,7 @@ router.get('/:directorId', async (req, res) => {
                                 )
                             )
                             FROM director_movies dm2
-                            WHERE dm2.tconst = dm.tconst
+                            WHERE dm2.tconst = dm.tconst AND dm2.category IS NOT NULL
                         )
                     )
                 ) as movies
@@ -223,4 +279,4 @@ router.get('/:directorId', async (req, res) => {
     }
 });
 
-module.exports = router; 
+module.exports = router;
