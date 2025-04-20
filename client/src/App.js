@@ -15,6 +15,8 @@ import FilmPage from './pages/FilmPage';
 import NotFound from './pages/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import UserProfile from './pages/UserProfile';
+import ActorDetailPage from './pages/ActorDetailPage';
+
 
 // Create a theme
 const theme = createTheme({
@@ -50,6 +52,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/directors" element={<DirectorPage />} />
             <Route path="/actors" element={<ActorPage />} />
+            <Route path="/actors/:actorId" element={<ActorDetailPage />} />
             <Route path="/genres" element={<GenrePage />} />
             <Route path="/films" element={<FilmPage />} />
             

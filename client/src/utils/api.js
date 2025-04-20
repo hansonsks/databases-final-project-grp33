@@ -1,6 +1,8 @@
 import axios from 'axios';
 import config from '../config.json';
 
+
+
 const API_URL = `http://${config.server_host}:${config.server_port}`;
 
 const api = axios.create({
@@ -20,5 +22,17 @@ api.interceptors.request.use(
     return Promise.reject(error);
   }
 );
+
+export const fetchTopActors = async (sortBy = 'ratings', limit = 10) => {
+  const response = await api.get(`/api/actors/top`, {
+    params: { sortBy, limit }
+  });
+  return response.data.actors;
+};
+
+export const fetchActorDetails = async (actorId) => {
+  const response = await api.get(`/api/actors/${actorId}`);
+  return response.data.actor;
+};
 
 export default api;
