@@ -45,6 +45,22 @@ const GenrePage = () => {
     }
   };
 
+  // === Y-Axis Value Formatting ===
+  const rawMax = Math.max(
+    ...topGenres.map((genre) =>
+      sortBy === 'revenue' ? genre.total_revenue : genre.total_awards
+    ),
+    0
+  );
+
+  const getRoundedMax = (value, interval) => {
+    return Math.ceil(value / interval) * interval;
+  };
+
+  const paddedMax = sortBy === 'revenue'
+    ? getRoundedMax(rawMax, 1e11)    // Round to nearest 100B
+    : getRoundedMax(rawMax, 1000);   // Round to nearest 1,000
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper elevation={3} sx={{ p: 4, mb: 4 }}>
@@ -112,12 +128,13 @@ const GenrePage = () => {
               />
               <YAxis
                 type="number"
+                tickCount={6}
                 tickFormatter={(value) =>
                   sortBy === 'revenue'
                     ? `$${(value / 1e6).toFixed(1)}M`
                     : value.toLocaleString()
                 }
-                domain={[0, 'auto']}
+                domain={[0, paddedMax]}
               />
               <Tooltip
                 formatter={(value) =>
@@ -134,7 +151,6 @@ const GenrePage = () => {
               />
             </BarChart>
           </ResponsiveContainer>
-
         )}
       </Paper>
     </Container>
