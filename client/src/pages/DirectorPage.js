@@ -29,7 +29,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 
-/* ───────── helper: convert list → chart rows ───────── */
+
 const toTwo = (n) => Number(Number(n).toFixed(2));
 
 const buildChartData = (list, metric) =>
@@ -113,7 +113,6 @@ const DirectorPage = () => {
       ? 'Box Office'
       : 'Nominated Films';
 
-  /* -------- table renderer (original code) ---------------------------- */
   const renderTable = () =>
     sortBy === 'decade' ? (
       <Table size="small">
@@ -171,7 +170,7 @@ const DirectorPage = () => {
       </Table>
     );
 
-  /* ------------------------------------------------------------------- */
+ 
   const renderLoading = () => (
     <Box display="flex" flexDirection="column" alignItems="center" minHeight="200px">
       <CircularProgress sx={{ mb: 2 }} />
@@ -181,7 +180,7 @@ const DirectorPage = () => {
     </Box>
   );
 
-  /* ================= render page ===================== */
+
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
       <Paper elevation={3} sx={{ p: 4 }}>
