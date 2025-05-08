@@ -7,7 +7,6 @@ This project is a fullstack application for analyzing movie data from multiple s
 The project integrates data from the following sources:
 
 1. **[Oscar Awards Database](https://developer.imdb.com/non-commercial-datasets/)**
-   - [Link to be added]
    - Contains information about Oscar nominations and winners
    - Total rows: 8,713
 
@@ -162,10 +161,6 @@ server/
 ├── __tests__/       # Test files
 └── server.js        # Main server file
 ```
-
-## Contributing
-
-[Instructions for contributing to be added]
 
 ## License
 
