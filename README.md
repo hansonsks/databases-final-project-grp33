@@ -6,18 +6,16 @@ This project is a fullstack application for analyzing movie data from multiple s
 
 The project integrates data from the following sources:
 
-1. **Oscar Awards Database**
+1. **[Oscar Awards Database](https://developer.imdb.com/non-commercial-datasets/)**
    - [Link to be added]
    - Contains information about Oscar nominations and winners
    - Total rows: 8,713
 
-2. **TMDB (The Movie Database)**
-   - [Link to be added]
+2. **[TMDB (The Movie Database)](https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies)**
    - Provides financial data (budget, revenue) and additional movie metadata
    - Total rows: 313,359
 
-3. **IMDB Datasets**
-   - [Link to be added]
+3. **[IMDB Datasets](https://www.kaggle.com/datasets/unanimad/the-oscar-award)**
    - Includes several key datasets:
      - `name.basics`: Information about actors, directors, and other industry professionals (11,086,134 rows)
      - `title.basics`: Basic information about movies and TV shows (536,283 rows)
