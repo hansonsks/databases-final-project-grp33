@@ -3,40 +3,32 @@ import {
   Container, Typography, Paper, Box, CircularProgress, Alert,
   Table, TableHead, TableRow, TableCell, TableBody,
   Select, MenuItem, FormControl, InputLabel, TextField, Grid,
-  Button, Divider, TableSortLabel
+  Button, Divider, TableSortLabel, Snackbar
 } from '@mui/material';
 import TheatersIcon from '@mui/icons-material/Theaters';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../utils/api';
 import LimitSelector from '../components/LimitSelector';
-import { Snackbar } from '@mui/material';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import IconButton from '@mui/material/IconButton';
-import Tooltip from '@mui/material/Tooltip';
 
 const FilmPage = () => {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const searchQuery = searchParams.get('search');
+
   const [films, setFilms] = useState([]);
   const [filteredFilms, setFilteredFilms] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [sortBy, setSortBy] = useState('roi');
   const [genre, setGenre] = useState('Drama');
-  const [actorName, setActorName] = useState('Tom Hanks');
+  const [actorName, setActorName] = useState(searchQuery || 'Tom Hanks');
   const [actorSortBy, setActorSortBy] = useState('year');
   const [actorSortOrder, setActorSortOrder] = useState('desc');
-  const [sortOrder, setSortOrder] = useState('desc');
-  const toggleSortOrder = () => {
-    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-  };
   const [yearStart, setYearStart] = useState(2000);
   const [yearEnd, setYearEnd] = useState(2023);
   const [limit, setLimit] = useState(10); // Default limit
   const [dotCount, setDotCount] = useState(1);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const handleCloseSnackbar = () => {
-    setSnackbar({ ...snackbar, open: false });
-  };
   
   // Column sorting states
   const [orderBy, setOrderBy] = useState('');
@@ -194,29 +186,27 @@ const FilmPage = () => {
           response = await api.get(`/api/films/by-actor/${encodeURIComponent(actorName)}`, {
             params: { 
               sortBy: actorSortBy, 
-              order: actorSortOrder
+              order: actorSortOrder,
+              limit: limit
             }
           });
           
-          console.log("Actor films response data:", response.data);
+          console.log("Actor search response:", response.data);
           
-          if (response.data && response.data.films) {
-            // Ensure numeric values are properly parsed
-            const processedFilms = response.data.films.map(film => ({
-              ...film,
-              year: typeof film.year === 'string' ? parseInt(film.year, 10) : (film.year || 0)
-            }));
-            
-            setFilms(processedFilms);
-            setFilteredFilms(processedFilms);
-            // Set default column sort for actor view
-            if (!orderBy) {
-              setOrderBy('year');
-              setOrder('desc');
-            }
-          } else {
+          // Check if actor was found (using the new API response format)
+          if (response.data.actorFound === false) {
+            setError(`No actor found with name: "${actorName}"`);
             setFilms([]);
             setFilteredFilms([]);
+          } else if (response.data.films && response.data.films.length === 0) {
+            setError(`Actor "${actorName}" found, but no films available`);
+            setFilms([]);
+            setFilteredFilms([]);
+          } else {
+            setFilms(response.data.films || []);
+            setFilteredFilms(response.data.films || []);
+            // Clear any previous errors
+            setError('');
           }
         } else {
           // Default case
@@ -226,7 +216,20 @@ const FilmPage = () => {
         }
       } catch (err) {
         console.error('Failed to load films:', err);
-        setError(`Failed to load films: ${err.message}`);
+        
+        // Special handling for actor search errors
+        if (sortBy === 'actor') {
+          if (err.response?.status === 404) {
+            setError(`No actor found with name: "${actorName}"`);
+          } else {
+            setError(`Error searching for "${actorName}": ${err.message || 'Unknown error'}`);
+          }
+        } else {
+          setError(`Failed to load films: ${err.message || 'Unknown error'}`);
+        }
+        
+        setFilms([]);
+        setFilteredFilms([]);
       } finally {
         setLoading(false);
       }
@@ -358,6 +361,8 @@ const FilmPage = () => {
   
   // Navigate to film details safely
   const navigateToFilm = (film) => {
+    console.log("Film data being passed to navigation:", film);
+    
     // Try to get the film ID from various possible properties
     let filmId = null;
     
@@ -370,11 +375,32 @@ const FilmPage = () => {
       filmId = film.imdb_id;
     }
     
+    // For the ROI view, the correct field is not available directly
+    // It may require a second lookup in the original data
+    if (!filmId && (sortBy === 'roi' || sortBy === 'highest-roi')) {
+      // For ROI view films we need to try to match based on title
+      const matchingFilm = films.find(f => 
+        f.film_title === film.film_title || 
+        f.title === film.title || 
+        f.primaryTitle === film.primaryTitle
+      );
+      
+      if (matchingFilm && matchingFilm.tconst) {
+        filmId = matchingFilm.tconst;
+      }
+    }
+    
     if (filmId) {
       console.log(`Navigating to film ID: ${filmId}`);
       navigate(`/films/${filmId}`);
     } else {
-      // If we really can't find an ID, log an error
+      // If we still can't find an ID, check if we need to convert "year" property to a proper ID
+      if (film.year && typeof film.year === 'object' && film.year.film && film.year.film.tconst) {
+        filmId = film.year.film.tconst;
+        navigate(`/films/${filmId}`);
+        return;
+      }
+      
       console.error("Cannot navigate - no valid ID found:", film);
       // Show an error message to the user
       setSnackbar({
@@ -383,6 +409,10 @@ const FilmPage = () => {
         severity: 'error'
       });
     }
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   const renderFilmsTable = () => {
@@ -571,12 +601,32 @@ const FilmPage = () => {
                   <strong>Year</strong>
                 </TableSortLabel>
               </TableCell>
+              <TableCell align="right">
+                <TableSortLabel
+                  active={orderBy === 'averagerating'}
+                  direction={orderBy === 'averagerating' ? order : 'asc'}
+                  onClick={createSortHandler('averagerating')}
+                >
+                  <strong>Rating</strong>
+                </TableSortLabel>
+              </TableCell>
+              <TableCell align="right">
+                <TableSortLabel
+                  active={orderBy === 'revenue'}
+                  direction={orderBy === 'revenue' ? order : 'asc'}
+                  onClick={createSortHandler('revenue')}
+                >
+                  <strong>Revenue</strong>
+                </TableSortLabel>
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredFilms.map((film, index) => {
               const title = film.title || film.primarytitle || "Unknown";
               const year = film.year || film.startyear || 'N/A';
+              const rating = film.averagerating || 'N/A';
+              const revenue = film.revenue || 0;
               
               return (
                 <TableRow
@@ -587,6 +637,8 @@ const FilmPage = () => {
                 >
                   <TableCell>{title}</TableCell>
                   <TableCell align="right">{year}</TableCell>
+                  <TableCell align="right">{typeof rating === 'number' ? rating.toFixed(1) : rating}</TableCell>
+                  <TableCell align="right">${typeof revenue === 'number' ? revenue.toLocaleString() : revenue}</TableCell>
                 </TableRow>
               );
             })}
@@ -729,7 +781,30 @@ const FilmPage = () => {
         {loading ? (
           renderLoadingMessage()
         ) : error ? (
-          <Alert severity="error">{error}</Alert>
+          <Box sx={{ my: 3 }}>
+            <Alert 
+              severity={sortBy === 'actor' && actorName ? "info" : "error"}
+              sx={{ mb: 2 }}
+            >
+              {error}
+            </Alert>
+            
+            {/* Show additional help text for actor searches */}
+            {sortBy === 'actor' && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                Try searching for a different actor or check the spelling. Popular actors include: 
+                <Button size="small" onClick={() => setActorName("Tom Hanks")} sx={{ mx: 0.5 }}>
+                  Tom Hanks
+                </Button>
+                <Button size="small" onClick={() => setActorName("Meryl Streep")} sx={{ mx: 0.5 }}>
+                  Meryl Streep
+                </Button>
+                <Button size="small" onClick={() => setActorName("Leonardo DiCaprio")} sx={{ mx: 0.5 }}>
+                  Leonardo DiCaprio
+                </Button>
+              </Typography>
+            )}
+          </Box>
         ) : filteredFilms.length === 0 ? (
           <Alert severity="info">
             No films found. Try different search criteria or select another {sortBy === 'actor' ? 'actor' : sortBy === 'genre' ? 'genre' : 'time period'}.
@@ -744,7 +819,7 @@ const FilmPage = () => {
               
               {orderBy && (
                 <Typography variant="body2" color="text.secondary">
-                  Sorted by: {orderBy.replaceAll('_', ' ')} ({order === 'asc' ? 'ascending' : 'descending'})
+                  Sorted by: {orderBy.replace('_', ' ')} ({order === 'asc' ? 'ascending' : 'descending'})
                 </Typography>
               )}
             </Box>
@@ -771,16 +846,16 @@ const FilmPage = () => {
           </>
         )}
       </Paper>
-      <Snackbar
-  open={snackbar.open}
-  autoHideDuration={6000}
-  onClose={handleCloseSnackbar}
-  message={snackbar.message}
-  severity={snackbar.severity}
-  anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-/>
+      
+      <Snackbar 
+        open={snackbar.open} 
+        autoHideDuration={6000} 
+        onClose={handleCloseSnackbar}
+        message={snackbar.message}
+        severity={snackbar.severity}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Container>
-    
   );
 };
 

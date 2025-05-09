@@ -98,89 +98,103 @@ router.get('/highest-roi', async (req, res) => {
 //all the movies a certain actor has been in
 router.get('/by-actor/:actorName', async (req, res) => {
     try {
-        const { actorName } = req.params;
-        const { sortBy = 'year', order = 'desc', limit } = req.query;
-        
-        // Set a default value if limit is not provided
-        let queryLimit = 10; // Default limit
-        
-        // Parse the limit parameter
-        if (limit !== undefined) {
-            if (limit === 'unlimited') {
-                // Set to a very large number instead of removing the LIMIT clause
-                queryLimit = 100000;
-            } else {
-                const parsedLimit = parseInt(limit);
-                if (!isNaN(parsedLimit) && parsedLimit > 0) {
-                    queryLimit = parsedLimit;
-                }
-            }
+      const { actorName } = req.params;
+      const { sortBy = 'year', order = 'desc', limit } = req.query;
+      
+      console.log(`Searching for films with actor: ${actorName}, limit: ${limit}, sortBy: ${sortBy}, order: ${order}`);
+      
+      // Set a default value if limit is not provided
+      let queryLimit = 10; // Default limit
+      
+      // Parse the limit parameter
+      if (limit !== undefined) {
+        if (limit === 'unlimited') {
+          // Set to a very large number instead of removing the LIMIT clause
+          queryLimit = 100000;
+        } else {
+          const parsedLimit = parseInt(limit);
+          if (!isNaN(parsedLimit) && parsedLimit > 0) {
+            queryLimit = parsedLimit;
+          }
         }
-        
-        // Validate sorting parameters
-        const validSortFields = ['year', 'title'];
-        const validOrders = ['asc', 'desc'];
-        
-        const sortField = validSortFields.includes(sortBy.toLowerCase()) 
-            ? sortBy.toLowerCase() 
-            : 'year';
-            
-        const sortOrder = validOrders.includes(order.toLowerCase())
-            ? order.toLowerCase()
-            : 'desc';
-        
-        // Create basic query without the ORDER BY clause
-        let query = `
-            WITH TargetNconst AS (
-                SELECT nconst
-                FROM public.namebasics
-                WHERE primaryname = $1
-                LIMIT 1
-            )
-            SELECT 
-                t.tconst,
-                t.primarytitle AS title,
-                t.startyear AS year
-            FROM 
-                public.titleprincipals tp
-            JOIN 
-                TargetNconst tn ON tp.nconst = tn.nconst
-            JOIN 
-                public.titlebasics t ON tp.tconst = t.tconst
-            WHERE 
-                tp.category IN ('actor', 'actress')
-        `;
-        
-        // Add the appropriate ORDER BY clause based on sort field to avoid type mismatch
-        if (sortField === 'year') {
-            query += ` ORDER BY t.startyear ${sortOrder === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`;
-        } else if (sortField === 'title') {
-            query += ` ORDER BY t.primarytitle ${sortOrder === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`;
-        }
-        
-        // Add the LIMIT clause
-        query += ` LIMIT $2`;
-
-        // Execute the query with parameters
-        const result = await pool.query(query, [actorName, queryLimit]);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Actor not found or no films found' });
-        }
-        
-        res.json({ 
-            actor: actorName, 
-            sortBy: sortField,
-            order: sortOrder,
-            count: result.rows.length,
-            films: result.rows 
+      }
+      
+      // Validate sorting parameters
+      const validSortFields = ['year', 'title'];
+      const validOrders = ['asc', 'desc'];
+      
+      const sortField = validSortFields.includes(sortBy.toLowerCase()) 
+          ? sortBy.toLowerCase() 
+          : 'year';
+          
+      const sortOrder = validOrders.includes(order.toLowerCase())
+          ? order.toLowerCase()
+          : 'desc';
+      
+      // First check if the actor exists
+      const actorQuery = `
+        SELECT nconst 
+        FROM public.namebasics 
+        WHERE LOWER(primaryname) = LOWER($1)
+      `;
+      
+      const actorResult = await pool.query(actorQuery, [actorName]);
+      
+      if (actorResult.rows.length === 0) {
+        // Return empty results rather than 404 error
+        return res.json({ 
+          actor: actorName, 
+          actorFound: false,
+          message: `No actor found with name: ${actorName}`,
+          films: [] 
         });
+      }
+      
+      const actorNconst = actorResult.rows[0].nconst;
+      
+      // Now get the films for this actor
+      const filmsQuery = `
+        SELECT 
+          t.tconst,
+          t.primarytitle AS title,
+          t.startyear AS year,
+          r.averagerating,
+          m.revenue
+        FROM 
+          public.titleprincipals tp
+        JOIN 
+          public.titlebasics t ON tp.tconst = t.tconst
+        LEFT JOIN 
+          public.titleratings r ON t.tconst = r.tconst
+        LEFT JOIN 
+          public.tmdb m ON t.tconst = m.imdb_id
+        WHERE 
+          tp.nconst = $1
+          AND tp.category IN ('actor', 'actress')
+        ${sortField === 'year' 
+          ? `ORDER BY t.startyear ${sortOrder === 'asc' ? 'ASC' : 'DESC'} NULLS LAST` 
+          : `ORDER BY t.primarytitle ${sortOrder === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`}
+        LIMIT $2
+      `;
+      
+      const filmsResult = await pool.query(filmsQuery, [actorNconst, queryLimit]);
+      
+      // Return success even with empty films array
+      res.json({ 
+        actor: actorName,
+        actorFound: true, 
+        sortBy: sortField,
+        order: sortOrder,
+        count: filmsResult.rows.length,
+        films: filmsResult.rows 
+      });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'An error occurred while fetching films by actor' });
+      console.error('Error fetching films by actor:', err);
+      res.status(500).json({ error: 'An error occurred while fetching films by actor' });
     }
-});
+  });
 
+  
 //top movies by genre
 router.get('/top-by-genre/:genreName', async (req, res) => {
     try {

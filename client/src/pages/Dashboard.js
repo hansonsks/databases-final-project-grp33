@@ -126,112 +126,210 @@ const Dashboard = () => {
   }, []);
 
   const handleOpenFilmDialog = async (film) => {
+    console.log("Opening film dialog with data:", film);
     setSelectedFilm(film);
     setFilmDialogOpen(true);
     
     try {
       setLoadingFilmDetails(true);
       
-      // Try to fetch real film data
-      let filmData;
-      let filmId = null;
-  
-      try {
-        let searchResponse;
-        if (film.awardid) {
-          searchResponse = await api.get('/api/awards/search-by-awardid', { 
-            params: { 
-              awardid : film.awardid
-            }
-          });
-          
-          if (searchResponse.data.film && searchResponse.data.film[0]) {
-            const searchedFilm = searchResponse.data.film[0];
-            filmId = searchedFilm.tconst; // Save the film ID
-            
-            filmData = {          
-              tconst: searchedFilm.tconst, // Include the tconst
-              title: film.title || film.filmtitle,
-              year: film.year,
-              director: searchedFilm.directors || 'Unknown Director',
-              cast: searchedFilm.actors || ['Top Cast Information Not Available'],
-              awards: [
-                { category: searchedFilm.category, year: film.year, isWinner: film.iswinner }
-              ],
-              ratings: { imdb: searchedFilm.imdb_rating || 'N/A' },
-              boxOffice: searchedFilm.box_office || 'N/A'
-            };
+      // Try to fetch complete film data using the most reliable identifier
+      let detailedFilmData = null;
+      
+      // Case 1: We have a tconst/filmid - use the film detail endpoint directly
+      if (film.tconst || film.filmid) {
+        try {
+          const filmId = film.tconst || film.filmid;
+          const detailResponse = await api.get(`/api/films/${filmId}`);
+          if (detailResponse.data && detailResponse.data.film) {
+            detailedFilmData = detailResponse.data.film;
+            console.log("Got detailed film data by ID:", detailedFilmData);
           }
-        } else if (film.filmid) {
-          // Direct ID access if available
-          filmId = film.filmid;
-        } else {
-          searchResponse = await api.get('/api/awards/search-by-other', { 
-            params: { 
-              title: film.title,
-              year: film.year,
-              category: film.category,
-              iswinner: film.iswinner
-            }
-          });
-          
-          if (searchResponse.data.film && searchResponse.data.film[0]) {
-            const searchedFilm = searchResponse.data.film[0];
-            filmId = searchedFilm.tconst; // Save the film ID
-            
-            filmData = {          
-              tconst: searchedFilm.tconst, // Include the tconst
-              title: film.title || film.filmtitle,
-              year: film.year,
-              director: searchedFilm.directors || 'Unknown Director',
-              cast: searchedFilm.actors || ['Top Cast Information Not Available'],
-              awards: [
-                { category: searchedFilm.category, year: film.year, isWinner: film.iswinner }
-              ],
-              ratings: { imdb: searchedFilm.imdb_rating || 'N/A' },
-              boxOffice: searchedFilm.box_office || 'N/A'
-            };
-          }
+        } catch (idError) {
+          console.error("Error fetching film by ID:", idError);
         }
-      } catch (searchErr) {
-        console.error('Error searching for film:', searchErr);
       }
       
-      // If we couldn't get real data or filmId, check for filmid directly
-      if (!filmData) {
-        // Try to extract ID from various possible fields
-        if (!filmId) {
-          filmId = film.filmid || film.tconst || 
-                  (film.selectedFilm && film.selectedFilm.filmid) || 
-                  (film.selectedFilm && film.selectedFilm.tconst);
+      // Case 1.5: Special handling for box office films
+      if (!detailedFilmData && film.isBoxOffice) {
+        try {
+          console.log("Processing box office film:", film);
+          const filmId = film.tconst;
+          
+          if (filmId) {
+            // Try to get complete details using the film ID
+            try {
+              const detailResponse = await api.get(`/api/films/${filmId}`);
+              if (detailResponse.data && detailResponse.data.film) {
+                detailedFilmData = detailResponse.data.film;
+                console.log("Got box office film details by ID:", detailedFilmData);
+              }
+            } catch (idError) {
+              console.error("Error fetching box office film by ID:", idError);
+            }
+          }
+          
+          // If we couldn't get detailed data, create a reasonable structure from what we have
+          if (!detailedFilmData) {
+            detailedFilmData = {
+              tconst: film.tconst,
+              title: film.title,
+              year: film.year,
+              directors: film.director ? film.director.split(', ').map(name => ({ name })) : [],
+              averagerating: film.averagerating,
+              revenue: film.revenue,
+              // Add award info if it won an Oscar
+              awards: film.won_oscar ? [{ 
+                category: "Oscar", 
+                year: film.year, 
+                isWinner: true 
+              }] : []
+            };
+          }
+        } catch (boxOfficeError) {
+          console.error("Error processing box office film:", boxOfficeError);
+        }
+      }
+      
+      // Case 2: Use the search endpoint if we have title (useful for Top Box Office Films)
+      if (!detailedFilmData && film.title) {
+        try {
+          const searchParams = { title: film.title };
+          if (film.year) searchParams.year = film.year;
+          
+          const searchResponse = await api.get('/api/films/search', { params: searchParams });
+          if (searchResponse.data && searchResponse.data.film) {
+            detailedFilmData = searchResponse.data.film;
+            console.log("Got detailed film data by search:", detailedFilmData);
+          }
+        } catch (searchError) {
+          console.error("Error searching for film:", searchError);
+        }
+      }
+      
+      // Case 3: For Oscar films, use the awards endpoints if previous methods failed
+      if (!detailedFilmData && (film.awardid || film.category)) {
+        try {
+          let searchResponse;
+          if (film.awardid) {
+            searchResponse = await api.get('/api/awards/search-by-awardid', { 
+              params: { awardid: film.awardid }
+            });
+          } else {
+            searchResponse = await api.get('/api/awards/search-by-other', { 
+              params: { 
+                title: film.title || film.filmtitle,
+                year: film.year,
+                category: film.category,
+                iswinner: film.iswinner
+              }
+            });
+          }
+          
+          if (searchResponse.data && searchResponse.data.film && searchResponse.data.film[0]) {
+            // Try to get more details using the film ID from awards
+            const awardFilm = searchResponse.data.film[0];
+            if (awardFilm.tconst) {
+              try {
+                const detailResponse = await api.get(`/api/films/${awardFilm.tconst}`);
+                if (detailResponse.data && detailResponse.data.film) {
+                  detailedFilmData = detailResponse.data.film;
+                  console.log("Got detailed film data from award film ID:", detailedFilmData);
+                }
+              } catch (detailError) {
+                console.error("Error fetching details for award film:", detailError);
+                // Use award data directly if detail fetch fails
+                detailedFilmData = {
+                  tconst: awardFilm.tconst,
+                  title: film.title || film.filmtitle,
+                  year: film.year,
+                  director: awardFilm.directors,
+                  averagerating: awardFilm.imdb_rating,
+                  awards: [
+                    { category: film.category, year: film.year, isWinner: film.iswinner }
+                  ]
+                };
+              }
+            }
+          }
+        } catch (awardError) {
+          console.error("Error fetching film from award data:", awardError);
+        }
+      }
+      
+      // Build the film details object from the best available data
+      let filmData;
+      
+      if (detailedFilmData) {
+        // Process cast from array if available
+        let castDisplay = ['Cast information not available'];
+        if (detailedFilmData.cast && Array.isArray(detailedFilmData.cast)) {
+          castDisplay = detailedFilmData.cast.map(actor => actor.name).slice(0, 5);
+        } else if (typeof detailedFilmData.cast === 'string') {
+          castDisplay = [detailedFilmData.cast];
+        }
+        
+        // Process directors from array if available
+        let directorDisplay = 'Unknown Director';
+        if (detailedFilmData.directors && Array.isArray(detailedFilmData.directors)) {
+          directorDisplay = detailedFilmData.directors.map(d => d.name).join(', ');
+        } else if (detailedFilmData.director) {
+          directorDisplay = detailedFilmData.director;
+        }
+        
+        // Ensure awards is a well-formed array
+        let awardsArray = [];
+        if (detailedFilmData.awards && Array.isArray(detailedFilmData.awards)) {
+          awardsArray = detailedFilmData.awards;
+        } else if (film.category) {
+          awardsArray = [{ 
+            category: film.category, 
+            year: film.year, 
+            isWinner: film.iswinner || film.won_oscar || false 
+          }];
         }
         
         filmData = {
-          tconst: filmId, // Include any ID we found
-          title: film.title,
+          tconst: detailedFilmData.tconst,
+          title: detailedFilmData.title || film.title || film.filmtitle,
+          year: detailedFilmData.year || film.year,
+          director: directorDisplay,
+          cast: castDisplay,
+          awards: awardsArray,
+          ratings: { imdb: detailedFilmData.averagerating || film.averagerating || 'N/A' },
+          boxOffice: detailedFilmData.revenue ? `$${detailedFilmData.revenue.toLocaleString()}` : 'N/A'
+        };
+      } else {
+        // Fallback to the original data we have
+        filmData = {
+          tconst: film.tconst || film.filmid,
+          title: film.title || film.filmtitle,
           year: film.year,
           director: film.director || 'Unknown Director',
-          cast: ['Top Cast Information Not Available'],
-          awards: [
-            { category: film.category, year: film.year, isWinner: film.iswinner }
-          ],
-          ratings: { imdb: 'N/A'},
-          boxOffice: 'N/A'
+          cast: film.cast || ['Cast information not available'],
+          awards: [{ 
+            category: film.category || 'Unknown Category', 
+            year: film.year, 
+            isWinner: film.iswinner || film.won_oscar || false 
+          }],
+          ratings: { imdb: film.averagerating || 'N/A' },
+          boxOffice: film.revenue ? `$${film.revenue.toLocaleString()}` : 'N/A'
         };
       }
       
-      console.log("Film details with ID:", filmData);
+      console.log("Final film details:", filmData);
       setFilmDetails(filmData);
       setLoadingFilmDetails(false);
       
     } catch (err) {
       console.error('Failed to load film details:', err);
       setFilmDetails({
-        title: film.title,
+        tconst: film.tconst || film.filmid,
+        title: film.title || film.filmtitle,
         year: film.year,
         director: 'Information Not Available',
         cast: ['Information Not Available'],
-        awards: [{ category: film.category, year: film.year, isWinner: film.iswinner }],
+        awards: [{ category: film.category || 'Unknown Category', year: film.year, isWinner: film.iswinner || film.won_oscar || false }],
         ratings: { imdb: 'N/A'},
         boxOffice: 'N/A'
       });
@@ -487,35 +585,38 @@ const Dashboard = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {data?.highestGrossing?.map((film, index) => (
-                      <TableRow 
-                        key={index} 
-                        hover
-                        onClick={() => handleOpenFilmDialog({
-                          title: film.title,
-                          year: film.year,
-                          tconst: film.tconst,
-                          director: film.director,
-                          averageRating: film.averagerating,
-                          revenue: film.revenue,
-                          won_oscar: film.won_oscar
-                        })}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        <TableCell>
-                          {film.title} {film.won_oscar && (
-                            <Tooltip title="Oscar Winner">
-                              <EmojiEventsIcon 
-                                fontSize="small" 
-                                sx={{ color: 'gold', verticalAlign: 'middle', ml: 1, width: 16, height: 16 }} 
-                              />
-                            </Tooltip>
-                          )}
-                        </TableCell>
-                        <TableCell align="right">${(film.revenue / 1000000).toFixed(1)}M</TableCell>
-                        <TableCell align="right">{film.averagerating?.toFixed(1) || 'N/A'}</TableCell>
-                      </TableRow>
-                    ))}
+                  {data?.highestGrossing?.map((film, index) => (
+                    <TableRow 
+                      key={index} 
+                      hover
+                      onClick={() => handleOpenFilmDialog({
+                        tconst: film.tconst,
+                        title: film.title,
+                        year: film.year,
+                        director: film.director,
+                        // Use exactly the same field names
+                        averagerating: film.averagerating,
+                        revenue: film.revenue,
+                        won_oscar: film.won_oscar,
+                        // Add a special flag to identify box office films
+                        isBoxOffice: true
+                      })}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      <TableCell sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {film.title} {film.won_oscar && (
+                          <Tooltip title="Oscar Winner">
+                            <EmojiEventsIcon 
+                              fontSize="small" 
+                              sx={{ color: 'gold', verticalAlign: 'middle', ml: 1, width: 16, height: 16 }} 
+                            />
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                      <TableCell align="right">${(film.revenue / 1000000).toFixed(0)}M</TableCell>
+                      <TableCell align="right">{film.averagerating?.toFixed(1) || 'N/A'}</TableCell>
+                    </TableRow>
+                  ))}
                     {(!data?.highestGrossing || data.highestGrossing.length === 0) && (
                       <TableRow>
                         <TableCell colSpan={3} align="center">No box office data available</TableCell>

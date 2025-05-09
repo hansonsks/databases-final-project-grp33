@@ -87,7 +87,7 @@ const Navigation = () => {
               textDecoration: 'none',
             }}
           >
-            MOVIE DB
+            Movie Maven
           </Typography>
 
           {/* Mobile menu */}
@@ -156,7 +156,7 @@ const Navigation = () => {
               textDecoration: 'none',
             }}
           >
-            MOVIE DB
+            Movie Maven
           </Typography>
 
           {/* Desktop menu */}
