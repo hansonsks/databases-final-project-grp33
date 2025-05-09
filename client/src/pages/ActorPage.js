@@ -15,19 +15,26 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Divider,
+  Grid,
+  IconButton,
+  Tooltip
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import {
   ResponsiveContainer,
   BarChart,
   Bar,
   XAxis,
   YAxis,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   CartesianGrid,
 } from 'recharts';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import LimitSelector from '../components/LimitSelector';
 
 const toTwo = (n) => Number(Number(n).toFixed(2));
 
@@ -54,10 +61,12 @@ const ActorPage = () => {
 
   const [actors, setActors] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
-  const [sortBy,  setSortBy]  = useState('ratings');
-  const [decade,  setDecade]  = useState(null);
-  const [dots,    setDots]    = useState(1);
+  const [error, setError] = useState('');
+  const [sortBy, setSortBy] = useState('ratings');
+  const [sortOrder, setSortOrder] = useState('desc'); // New state for sort order
+  const [decade, setDecade] = useState(null);
+  const [dots, setDots] = useState(1);
+  const [limit, setLimit] = useState(10); // Default limit
 
   useEffect(() => {
     if (!loading) return;
@@ -73,11 +82,23 @@ const ActorPage = () => {
         let res;
         if (sortBy === 'decade') {
           const dec = decade || 2010;
-          res = await api.get(`/api/actors/by-decade?decade=${dec}&limit=10`);
+          res = await api.get(`/api/actors/by-decade`, {
+            params: {
+              decade: dec,
+              limit: limit,
+              order: sortOrder // Add sort order
+            }
+          });
           setActors(res.data.decades || []);
           if (!decade) setDecade(dec);
         } else {
-          res = await api.get(`/api/actors/top?sortBy=${sortBy}&limit=10`);
+          res = await api.get(`/api/actors/top`, {
+            params: {
+              sortBy: sortBy,
+              limit: limit,
+              order: sortOrder // Add sort order
+            }
+          });
           setActors(res.data.actors || []);
         }
       } catch (err) {
@@ -88,13 +109,24 @@ const ActorPage = () => {
       }
     };
     fetchData();
-  }, [sortBy, decade]);
+  }, [sortBy, decade, limit, sortOrder]); // Add sortOrder to dependency array
 
   const changeSort = (e) => {
     const v = e.target.value;
     setSortBy(v);
     if (v !== 'decade') setDecade(null);
     if (v === 'decade' && !decade) setDecade(2010);
+  };
+
+  // Toggle sort order between asc and desc
+  const toggleSortOrder = () => {
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  };
+
+  // Handle limit change
+  const handleLimitChange = (newLimit) => {
+    console.log(`Limit changed to: ${newLimit}`);
+    setLimit(newLimit);
   };
 
   const chartData = buildChartData(actors, sortBy);
@@ -115,7 +147,7 @@ const ActorPage = () => {
             <TableCell><strong>Name</strong></TableCell>
             <TableCell align="right"><strong>Nominated Films</strong></TableCell>
             <TableCell align="right"><strong>Total Films</strong></TableCell>
-            <TableCell align="right"><strong>Nomination %</strong></TableCell>
+            <TableCell align="right"><strong>Nomination %</strong></TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -182,26 +214,44 @@ const ActorPage = () => {
         </Box>
 
         <Box mb={3}>
-          <FormControl fullWidth sx={{ mb: 2 }}>
-            <InputLabel>Sort By</InputLabel>
-            <Select value={sortBy} label="Sort By" onChange={changeSort}>
-              <MenuItem value="ratings">Average Rating</MenuItem>
-              <MenuItem value="nominations">Number of Nominations</MenuItem>
-              <MenuItem value="boxOffice">Box Office Revenue</MenuItem>
-              <MenuItem value="decade">By Decade</MenuItem>
-            </Select>
-          </FormControl>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={5}>
+              <FormControl fullWidth>
+                <InputLabel>Sort By</InputLabel>
+                <Select value={sortBy} label="Sort By" onChange={changeSort}>
+                  <MenuItem value="ratings">Average Rating</MenuItem>
+                  <MenuItem value="nominations">Number of Nominations</MenuItem>
+                  <MenuItem value="boxOffice">Box Office Revenue</MenuItem>
+                  <MenuItem value="decade">By Decade</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            
+            <Grid item xs={12} md={1}>
+              <Tooltip title={`Sort ${sortOrder === 'asc' ? 'Ascending' : 'Descending'}`}>
+                <IconButton 
+                  onClick={toggleSortOrder}
+                  color="primary"
+                  aria-label="change sort order"
+                >
+                  {sortOrder === 'asc' ? <ArrowUpwardIcon /> : <ArrowDownwardIcon />}
+                </IconButton>
+              </Tooltip>
+            </Grid>
 
-          {sortBy === 'decade' && (
-            <FormControl fullWidth>
-              <InputLabel>Select Decade</InputLabel>
-              <Select value={decade || 2010} label="Select Decade" onChange={(e) => setDecade(e.target.value)}>
-                {decades.map((d) => (
-                  <MenuItem key={d} value={d}>{d}s</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          )}
+            {sortBy === 'decade' && (
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Select Decade</InputLabel>
+                  <Select value={decade || 2010} label="Select Decade" onChange={(e) => setDecade(e.target.value)}>
+                    {decades.map((d) => (
+                      <MenuItem key={d} value={d}>{d}s</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+          </Grid>
         </Box>
 
         {!loading && !error && actors.length > 0 && (
@@ -218,10 +268,10 @@ const ActorPage = () => {
                   tick={{ fontSize: 11 }}
                 />
                 <YAxis tickFormatter={(v) => (sortBy === 'boxOffice' ? `$${v}M` : v)} />
-                <Tooltip
+                <RechartsTooltip
                   formatter={(v) =>
                     sortBy === 'boxOffice'
-                      ? [`$${toTwo(v)} M`, metricLabel]
+                      ? [`$${toTwo(v)} M`, metricLabel]
                       : [v, metricLabel]
                   }
                 />
@@ -234,7 +284,34 @@ const ActorPage = () => {
         {loading ? renderLoading() : error ? (
           <Alert severity="error">{error}</Alert>
         ) : (
-          <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>{renderTable()}</Box>
+          <>
+            {/* Results count */}
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="subtitle1">
+                Showing {actors.length} results
+              </Typography>
+            </Box>
+          
+            {/* Table with results */}
+            <Box sx={{ maxHeight: '400px', overflow: 'auto' }}>
+              {renderTable()}
+            </Box>
+            
+            {/* Results limit selector - at the bottom */}
+            <Box mt={3} pt={2}>
+              <Divider sx={{ mb: 2 }} />
+              <Box display="flex" justifyContent="center" alignItems="center">
+                <Typography variant="body2" color="text.secondary" sx={{ mr: 2 }}>
+                  Results per page:
+                </Typography>
+                <LimitSelector
+                  value={limit}
+                  onChange={handleLimitChange}
+                  options={[5, 10, 25, 50, 100]}
+                />
+              </Box>
+            </Box>
+          </>
         )}
       </Paper>
     </Container>

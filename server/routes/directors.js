@@ -5,7 +5,18 @@ const pool = require('../database/pool');
 // top director by rating or awards
 router.get('/top', async (req, res) => {
     try {
-        const { sortBy = 'ratings', limit = 10 } = req.query;
+        const { sortBy = 'ratings', limit = 10, order = 'desc' } = req.query;
+        
+        // Validate sort order
+        const sortOrder = ['asc', 'desc'].includes(order?.toLowerCase())
+            ? order.toLowerCase()
+            : 'desc';
+            
+        // Parse limit as integer with fallback to default
+        const parsedLimit = parseInt(limit, 10) || 10;
+        
+        console.log(`Executing directors query with limit: ${parsedLimit}, sortBy: ${sortBy}, order: ${sortOrder}`);
+        
         let query;
 
         if (sortBy === 'ratings') {
@@ -15,34 +26,42 @@ router.get('/top', async (req, res) => {
                         ar.avg_rating AS averagerating
                 FROM   mv_director_avg_rating ar
                 JOIN   namebasics nb USING (nconst)
-                ORDER  BY ar.avg_rating DESC
-                LIMIT  $1;
+                ORDER BY ar.avg_rating ${sortOrder}
+                LIMIT $1;
             `;
-          } else if (sortBy === 'nominations') {
+        } else if (sortBy === 'nominations') {
             query = `
                 SELECT nb.nconst,
                         nb.primaryname,
                         n.nominations
                 FROM   mv_director_nominations n
                 JOIN   namebasics nb USING (nconst)
-                ORDER  BY n.nominations DESC
-                LIMIT  $1;
+                ORDER BY n.nominations ${sortOrder}
+                LIMIT $1;
             `;
-          } else if (sortBy === 'boxOffice') {
+        } else if (sortBy === 'boxOffice') {
             query = `
-            SELECT nb.nconst,
-                    nb.primaryname,
-                    r.total_revenue AS boxOfficeTotal,
-                    r.movie_count  AS movieCount
-            FROM   mv_director_revenue r
-            JOIN   namebasics nb USING (nconst)
-            ORDER  BY r.total_revenue DESC
-            LIMIT  $1;
-        `;
-          }
+                SELECT nb.nconst,
+                        nb.primaryname,
+                        r.total_revenue AS boxofficetotal,
+                        r.movie_count  AS moviecount
+                FROM   mv_director_revenue r
+                JOIN   namebasics nb USING (nconst)
+                ORDER BY r.total_revenue ${sortOrder}
+                LIMIT $1;
+            `;
+        } else {
+            return res.status(400).json({ error: 'Invalid sortBy parameter' });
+        }
 
-        const result = await pool.query(query, [limit]);
-        res.json({ directors: result.rows });
+        const result = await pool.query(query, [parsedLimit]);
+        
+        res.json({ 
+            directors: result.rows,
+            limit: parsedLimit,
+            sortBy,
+            order: sortOrder
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while fetching top directors' });
@@ -52,7 +71,15 @@ router.get('/top', async (req, res) => {
 // complex query - directors with most nominated films by decade
 router.get('/by-decade', async (req, res) => {
     try {
-        const { decade, limit = 3 } = req.query;
+        const { decade, limit = 3, order = 'desc' } = req.query;
+        
+        // Validate sort order
+        const sortOrder = ['asc', 'desc'].includes(order?.toLowerCase())
+            ? order.toLowerCase()
+            : 'desc';
+            
+        // Parse limit as integer with fallback to default
+        const parsedLimit = parseInt(limit, 10) || 3;
 
         const query = `
         SELECT
@@ -67,15 +94,21 @@ router.get('/by-decade', async (req, res) => {
         JOIN   namebasics nb USING (nconst)
         WHERE  m.nominated_films > 0
         ${decade ? 'AND m.decade = $2' : ''}
-        ORDER  BY m.decade, m.nominated_films DESC
+        ORDER BY m.decade, m.nominated_films ${sortOrder}
         LIMIT  $1;
         `;
 
-        const params = [limit];
+        const params = [parsedLimit];
         if (decade) params.push(decade);
 
         const result = await pool.query(query, params);
-        res.json({ decades: result.rows });
+        
+        res.json({ 
+            decades: result.rows,
+            limit: parsedLimit,
+            decade: decade || null,
+            order: sortOrder
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while fetching directors by decade' });
@@ -86,6 +119,8 @@ router.get('/by-decade', async (req, res) => {
 router.get('/:directorId', async (req, res) => {
     try {
         const { directorId } = req.params;
+        console.log(`Getting details for director ID: ${directorId}`);
+        
         const query = `
             WITH director_movies AS (
                 SELECT 
@@ -104,6 +139,8 @@ router.get('/:directorId', async (req, res) => {
                 LEFT JOIN public.tmdb m ON t.tconst = m.imdb_id
                 LEFT JOIN public.theoscaraward o ON t.tconst = o.filmid
                 WHERE a.nconst = $1 AND p.category = 'director'
+                -- Add order and limit to avoid excessive data
+                ORDER BY t.startyear DESC
                 LIMIT 100
             )
             SELECT 
@@ -122,14 +159,17 @@ router.get('/:directorId', async (req, res) => {
                         'revenue', dm.revenue,
                         'awards', (
                             SELECT json_agg(
-                                json_build_object(
-                                    'category', dm2.category,
-                                    'year', dm2.awardyear,
-                                    'iswinner', dm2.iswinner
-                                )
+                                CASE WHEN dm2.category IS NOT NULL THEN
+                                    json_build_object(
+                                        'category', dm2.category,
+                                        'year', dm2.awardyear,
+                                        'iswinner', dm2.iswinner
+                                    )
+                                ELSE NULL
+                                END
                             )
                             FROM director_movies dm2
-                            WHERE dm2.tconst = dm.tconst AND dm2.category IS NOT NULL
+                            WHERE dm2.tconst = dm.tconst
                         )
                     )
                 ) as movies
@@ -140,12 +180,30 @@ router.get('/:directorId', async (req, res) => {
         `;
         
         const result = await pool.query(query, [directorId]);
+        
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Director not found' });
         }
-        res.json({ director: result.rows[0] });
+        
+        // Process the director data to clean up null values in awards
+        const director = result.rows[0];
+        
+        // Clean up movies and awards arrays
+        if (director.movies) {
+            director.movies = director.movies.filter(movie => movie && movie.tconst);
+            
+            // Clean up awards arrays
+            director.movies.forEach(movie => {
+                if (movie.awards) {
+                    // Filter out null entries
+                    movie.awards = movie.awards.filter(award => award !== null);
+                }
+            });
+        }
+        
+        res.json({ director });
     } catch (err) {
-        console.error(err);
+        console.error('Error fetching director details:', err);
         res.status(500).json({ error: 'An error occurred while fetching director details' });
     }
 });

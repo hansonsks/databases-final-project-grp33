@@ -98,41 +98,82 @@ router.get('/highest-roi', async (req, res) => {
 router.get('/by-actor/:actorName', async (req, res) => {
     try {
         const { actorName } = req.params;
-        const query = `
+        const { sortBy = 'year', order = 'desc', limit } = req.query;
+        
+        // Set a default value if limit is not provided
+        let queryLimit = 10; // Default limit
+        
+        // Parse the limit parameter
+        if (limit !== undefined) {
+            if (limit === 'unlimited') {
+                // Set to a very large number instead of removing the LIMIT clause
+                queryLimit = 100000;
+            } else {
+                const parsedLimit = parseInt(limit);
+                if (!isNaN(parsedLimit) && parsedLimit > 0) {
+                    queryLimit = parsedLimit;
+                }
+            }
+        }
+        
+        // Validate sorting parameters
+        const validSortFields = ['year', 'title'];
+        const validOrders = ['asc', 'desc'];
+        
+        const sortField = validSortFields.includes(sortBy.toLowerCase()) 
+            ? sortBy.toLowerCase() 
+            : 'year';
+            
+        const sortOrder = validOrders.includes(order.toLowerCase())
+            ? order.toLowerCase()
+            : 'desc';
+        
+        // Create basic query without the ORDER BY clause
+        let query = `
             WITH TargetNconst AS (
                 SELECT nconst
                 FROM public.namebasics
                 WHERE primaryname = $1
-            ),
-            TargetTconsts AS (
-                SELECT tconst
-                FROM public.titleprincipals tp
-                JOIN TargetNconst tn ON tp.nconst = tn.nconst
-                WHERE tp.category IN ('actor', 'actress')
+                LIMIT 1
             )
             SELECT 
                 t.tconst,
                 t.primarytitle AS title,
-                t.startyear AS year,
-                r.averagerating,
-                m.revenue
+                t.startyear AS year
             FROM 
-                public.titlebasics t
+                public.titleprincipals tp
             JOIN 
-                TargetTconsts tt ON t.tconst = tt.tconst
-            LEFT JOIN 
-                public.titleratings r ON t.tconst = r.tconst
-            LEFT JOIN 
-                public.tmdb m ON t.tconst = m.imdb_id
-            ORDER BY 
-                t.startyear DESC
+                TargetNconst tn ON tp.nconst = tn.nconst
+            JOIN 
+                public.titlebasics t ON tp.tconst = t.tconst
+            WHERE 
+                tp.category IN ('actor', 'actress')
         `;
+        
+        // Add the appropriate ORDER BY clause based on sort field to avoid type mismatch
+        if (sortField === 'year') {
+            query += ` ORDER BY t.startyear ${sortOrder === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`;
+        } else if (sortField === 'title') {
+            query += ` ORDER BY t.primarytitle ${sortOrder === 'asc' ? 'ASC' : 'DESC'} NULLS LAST`;
+        }
+        
+        // Add the LIMIT clause
+        query += ` LIMIT $2`;
 
-        const result = await pool.query(query, [actorName]);
+        // Execute the query with parameters
+        const result = await pool.query(query, [actorName, queryLimit]);
+        
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Actor not found or no films found' });
         }
-        res.json({ actor: actorName, films: result.rows });
+        
+        res.json({ 
+            actor: actorName, 
+            sortBy: sortField,
+            order: sortOrder,
+            count: result.rows.length,
+            films: result.rows 
+        });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'An error occurred while fetching films by actor' });

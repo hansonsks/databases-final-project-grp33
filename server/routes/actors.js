@@ -5,32 +5,53 @@ const pool = require('../database/pool');
 // Get top actors by rating, nominations, or box office
 router.get('/top', async (req, res) => {
   try {
-    const { sortBy = 'ratings', limit = 10 } = req.query;
+    const { sortBy = 'ratings', limit = 10, order = 'desc' } = req.query;
+    
+    // Validate sort order
+    const sortOrder = ['asc', 'desc'].includes(order?.toLowerCase())
+        ? order.toLowerCase()
+        : 'desc';
+        
+    // Parse limit as integer with fallback to default
+    const parsedLimit = parseInt(limit, 10) || 10;
+    
+    console.log(`Executing actors query with limit: ${parsedLimit}, sortBy: ${sortBy}, order: ${sortOrder}`);
+    
     let query;
 
     if (sortBy === 'ratings') {
       query = `
         SELECT *
         FROM mv_top_actors_ratings
+        ORDER BY averagerating ${sortOrder}
         LIMIT $1;
       `;
-    } if (sortBy === 'nominations') {
+    } else if (sortBy === 'nominations') {
       query = `
         SELECT *
         FROM mv_top_actors_nominations
+        ORDER BY nominations ${sortOrder}
         LIMIT $1;
       `;
-      
     } else if (sortBy === 'boxOffice') {
       query = `
         SELECT *
         FROM mv_top_actors_box_office
+        ORDER BY boxofficetotal ${sortOrder}
         LIMIT $1;
       `;
+    } else {
+      return res.status(400).json({ error: 'Invalid sortBy parameter' });
     }
 
-    const result = await pool.query(query, [limit]);
-    res.json({ actors: result.rows });
+    const result = await pool.query(query, [parsedLimit]);
+    
+    res.json({ 
+      actors: result.rows,
+      limit: parsedLimit,
+      sortBy,
+      order: sortOrder 
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'An error occurred while fetching top actors' });
@@ -40,7 +61,16 @@ router.get('/top', async (req, res) => {
 // Get actors with most nominated films by decade
 router.get('/by-decade', async (req, res) => {
   try {
-    const { decade, limit = 10 } = req.query;
+    const { decade, limit = 10, order = 'desc' } = req.query;
+    
+    // Validate sort order
+    const sortOrder = ['asc', 'desc'].includes(order?.toLowerCase())
+        ? order.toLowerCase()
+        : 'desc';
+        
+    // Parse limit as integer with fallback to default
+    const parsedLimit = parseInt(limit, 10) || 10;
+    
     let query = `
       SELECT
         decade,
@@ -49,7 +79,7 @@ router.get('/by-decade', async (req, res) => {
         nominated_films,
         total_films,
         nomination_percentage,
-        RANK() OVER (PARTITION BY decade ORDER BY nominated_films DESC) AS decade_rank
+        RANK() OVER (PARTITION BY decade ORDER BY nominated_films ${sortOrder}) AS decade_rank
       FROM mv_actor_decade_awards
       WHERE 1=1
     `;
@@ -67,10 +97,16 @@ router.get('/by-decade', async (req, res) => {
     ) AS ranked_actors WHERE decade_rank <= $${paramIdx}
     ORDER BY decade, decade_rank`;
 
-    params.push(limit);
+    params.push(parsedLimit);
 
     const result = await pool.query(query, params);
-    res.json({ decades: result.rows });
+    
+    res.json({ 
+      decades: result.rows,
+      limit: parsedLimit,
+      decade: decade || null,
+      order: sortOrder
+    });
   } catch (err) {
     console.error('Error in /by-decade route:', err);
     res.status(500).json({ error: 'An error occurred while fetching actors by decade' });

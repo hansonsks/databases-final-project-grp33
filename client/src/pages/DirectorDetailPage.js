@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container, Typography, CircularProgress, Paper,
   Divider, Box, List, ListItem, ListItemText,
-  Button, Snackbar, Alert
+  Button, Snackbar, Alert, Card, CardContent, CardActionArea
 } from '@mui/material';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
+import MovieIcon from '@mui/icons-material/Movie';
 import api from '../utils/api';
 import { AuthContext } from '../context/AuthContext';
 
@@ -24,25 +25,36 @@ const DirectorDetailPage = () => {
   useEffect(() => {
     const loadDirector = async () => {
       try {
+        console.log(`Loading director with ID: ${directorId}`);
         const response = await api.get(`/api/directors/${directorId}`);
+        
+        if (!response.data || !response.data.director) {
+          throw new Error('Director data not found in response');
+        }
+        
         const data = response.data.director;
+        console.log("Raw director data:", data);
 
         // Process movies to ensure awards are properly structured
         if (data && data.movies) {
           // Deduplicate movies based on tconst
           const deduplicatedMovies = {};
           for (const movie of data.movies) {
+            if (!movie || !movie.tconst) continue; // Skip invalid movies
+            
             if (!deduplicatedMovies[movie.tconst]) {
               deduplicatedMovies[movie.tconst] = {
                 ...movie,
                 awards: []
               };
             }
+            
             // Add awards if they exist
-            if (movie.awards) {
+            if (movie.awards && Array.isArray(movie.awards)) {
               const existing = deduplicatedMovies[movie.tconst].awards.map(a => 
                 a ? `${a.category}-${a.year}` : ''
               );
+              
               for (const award of movie.awards) {
                 // Skip null awards
                 if (!award) continue;
@@ -58,12 +70,14 @@ const DirectorDetailPage = () => {
           data.movies = Object.values(deduplicatedMovies)
             .filter(movie => movie.tconst) // Filter out any invalid movies
             .sort((a, b) => (b.year || 0) - (a.year || 0));
+            
+          console.log("Processed movies:", data.movies);
         }
         
         setDirector(data);
       } catch (err) {
         console.error('Failed to load director:', err);
-        setError('Failed to load director details');
+        setError(`Failed to load director details: ${err.message}`);
       } finally {
         setLoading(false);
       }
@@ -139,6 +153,11 @@ const DirectorDetailPage = () => {
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
   };
+  
+  const navigateToFilm = (filmId) => {
+    if (!filmId) return;
+    navigate(`/films/${filmId}`);
+  };
 
   if (loading) {
     return (
@@ -183,34 +202,47 @@ const DirectorDetailPage = () => {
         <Typography variant="h6">Filmography ({director.movies?.length || 0} films)</Typography>
 
         <Box sx={{ maxHeight: '600px', overflow: 'auto' }}>
-          {director.movies && director.movies.map((movie, idx) => (
-            <Box key={idx} sx={{ my: 3 }}>
-              <Typography variant="subtitle1">
-                <strong>{movie.title}</strong> ({movie.year || 'N/A'})
-              </Typography>
-              <Typography>Rating: {movie.averagerating ? parseFloat(movie.averagerating).toFixed(1) : 'N/A'}</Typography>
-              <Typography>
-                Revenue: {movie.revenue && movie.revenue > 0 ? `$${Number(movie.revenue).toLocaleString()}` : 'Unknown'}
-              </Typography>
+          {director.movies && director.movies.length > 0 ? (
+            director.movies.map((movie, idx) => (
+              <Card key={idx} sx={{ my: 2, cursor: 'pointer' }}>
+                <CardActionArea onClick={() => navigateToFilm(movie.tconst)}>
+                  <CardContent>
+                    <Box display="flex" alignItems="center" mb={1}>
+                      <MovieIcon sx={{ mr: 1, color: 'primary.main' }} />
+                      <Typography variant="subtitle1">
+                        <strong>{movie.title}</strong> ({movie.year || 'N/A'})
+                      </Typography>
+                    </Box>
+                    <Typography>Rating: {movie.averagerating ? parseFloat(movie.averagerating).toFixed(1) : 'N/A'}</Typography>
+                    <Typography>
+                      Revenue: {movie.revenue && movie.revenue > 0 ? `$${Number(movie.revenue).toLocaleString()}` : 'Unknown'}
+                    </Typography>
 
-              {movie.awards && movie.awards.length > 0 && (
-                <>
-                  <Typography variant="subtitle2" sx={{ mt: 1 }}>Awards:</Typography>
-                  <List dense>
-                    {movie.awards.map((award, i) => (
-                      award && (
-                        <ListItem key={i}>
-                          <ListItemText
-                            primary={`${award.category} (${award.year}) - ${award.iswinner ? 'Winner' : 'Nominated'}`}
-                          />
-                        </ListItem>
-                      )
-                    ))}
-                  </List>
-                </>
-              )}
-            </Box>
-          ))}
+                    {movie.awards && movie.awards.length > 0 && (
+                      <>
+                        <Typography variant="subtitle2" sx={{ mt: 1 }}>Awards:</Typography>
+                        <List dense>
+                          {movie.awards.map((award, i) => (
+                            award && (
+                              <ListItem key={i}>
+                                <ListItemText
+                                  primary={`${award.category} (${award.year}) - ${award.iswinner ? 'Winner' : 'Nominated'}`}
+                                />
+                              </ListItem>
+                            )
+                          ))}
+                        </List>
+                      </>
+                    )}
+                  </CardContent>
+                </CardActionArea>
+              </Card>
+            ))
+          ) : (
+            <Alert severity="info" sx={{ mt: 2 }}>
+              No films found for this director.
+            </Alert>
+          )}
         </Box>
       </Paper>
 
