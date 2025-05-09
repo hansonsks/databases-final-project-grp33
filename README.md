@@ -149,7 +149,7 @@ The API provides the following endpoints:
    npm start
    ```
 
-4. Run tests:
+4. Run tests from the root directory:
    ```bash
    npm test
    ```
