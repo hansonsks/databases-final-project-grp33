@@ -154,15 +154,6 @@ The API provides the following endpoints:
    npm test
    ```
 
-## Project Structure
-
-```
-server/
-├── routes/           # API route handlers
-├── database/         # Database connection and queries
-├── __tests__/       # Test files
-└── server.js        # Main server file
-```
 
 ## License
 
