@@ -133,29 +133,37 @@ const Dashboard = () => {
       
       // Try to fetch real film data
       let filmData;
-      
-      // First, try to search by film title and year
+
       try {
-        // We'll make a simple search by film title
-        const searchResponse = await api.get('/api/search', { 
-          params: { 
-            query: film.title,
-            type: 'films'
-          }
-        });
-        
-        if (searchResponse.data && searchResponse.data.films && searchResponse.data.films.length > 0) {
-          // Find the closest match by title and year
-          const matchingFilm = searchResponse.data.films.find(f => 
-            f.title === film.title || f.year === film.year
-          ) || searchResponse.data.films[0];
-          
-          // Fetch detailed film data
-          const detailResponse = await api.get(`/api/films/${matchingFilm.tconst}`);
-          if (detailResponse.data) {
-            filmData = detailResponse.data;
-          }
+        let searchResponse;
+        if (film.awardid) {
+          searchResponse = await api.get('/api/awards/search-by-awardid', { 
+            params: { 
+              awardid : film.awardid
+            }
+          });
+        } else {
+          searchResponse = await api.get('/api/awards/search-by-other', { 
+            params: { 
+              title: film.title,
+              year: film.year,
+              category: film.category,
+              iswinner: film.iswinner
+            }
+          });
         }
+        const searchedFilm = searchResponse.data.film[0];
+        filmData = {          
+          title: film.title || film.filmtitle,
+          year: film.year,
+          director: searchedFilm.directors || 'Unknown Director',
+          cast: searchedFilm.actors || ['Top Cast Information Not Available'],
+          awards: [
+            { category: searchedFilm.category, year: film.year, isWinner: film.iswinner }
+          ],
+          ratings: { imdb: searchedFilm.imdb_rating || 'N/A' },
+          boxOffice: searchedFilm.box_office || 'N/A'
+        };
       } catch (searchErr) {
         console.error('Error searching for film:', searchErr);
       }
@@ -170,7 +178,7 @@ const Dashboard = () => {
           awards: [
             { category: film.category, year: film.year, isWinner: film.iswinner }
           ],
-          ratings: { imdb: 'N/A', metacritic: 'N/A' },
+          ratings: { imdb: 'N/A'},
           boxOffice: 'N/A'
         };
       }
@@ -186,7 +194,7 @@ const Dashboard = () => {
         director: 'Information Not Available',
         cast: ['Information Not Available'],
         awards: [{ category: film.category, year: film.year, isWinner: film.iswinner }],
-        ratings: { imdb: 'N/A', metacritic: 'N/A' },
+        ratings: { imdb: 'N/A'},
         boxOffice: 'N/A'
       });
       setLoadingFilmDetails(false);
@@ -294,7 +302,7 @@ const Dashboard = () => {
         sx={{ 
           p: 4, 
           mb: 4, 
-          backgroundImage: 'linear-gradient(to right, #1976d2, #2196f3)',
+          backgroundImage: 'linear-gradient(to right,  #1976d2, #2196f3)',
           color: 'white'
         }}
       >
@@ -346,7 +354,9 @@ const Dashboard = () => {
                     <TableRow 
                       key={index} 
                       hover
-                      onClick={() => handleOpenFilmDialog(winner)}
+                      onClick={() => {
+                        handleOpenFilmDialog(winner);
+                      }}
                       sx={{ cursor: 'pointer' }}
                     >
                       <TableCell>{winner.title || winner.filmtitle}</TableCell>
@@ -498,16 +508,16 @@ const Dashboard = () => {
           {loadingFilmDetails ? (
             renderLoadingDots()
           ) : filmDetails ? (
-            <Grid container spacing={2}>
+            <Grid container spacing = {2} rowSpacing={2} columnSpacing = {10}>
               <Grid item xs={12}>
                 <Typography variant="h6">Oscar Awards</Typography>
                 <Typography variant="body1">
-                  {selectedFilm?.category} ({selectedFilm?.year}) - {selectedFilm?.iswinner ? 'Winner' : 'Nominee'}
+                  {filmDetails.awards[0].category} ({selectedFilm?.year}) - {selectedFilm?.iswinner ? 'Winner' : 'Nominee'}
                 </Typography>
               </Grid>
               
               <Grid item xs={12} sm={6}>
-                <Typography variant="h6">Director</Typography>
+                <Typography variant="h6">Director(s)</Typography>
                 <Typography variant="body1">{filmDetails.director}</Typography>
               </Grid>
               
@@ -526,8 +536,7 @@ const Dashboard = () => {
               <Grid item xs={12} sm={6}>
                 <Typography variant="h6">Ratings</Typography>
                 <Typography variant="body1">
-                  IMDb: {filmDetails.ratings?.imdb || 'N/A'}<br />
-                  Metacritic: {filmDetails.ratings?.metacritic || 'N/A'}
+                  IMDb: {filmDetails.ratings?.imdb || 'N/A'}
                 </Typography>
               </Grid>
             </Grid>
