@@ -144,7 +144,7 @@ The API provides the following endpoints:
    JWT_EXPIRY=24h
    ```
 
-3. Start the server:
+3. Start the server and client in their respective directories /client and /server:
    ```bash
    npm start
    ```
