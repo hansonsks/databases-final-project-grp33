@@ -94,11 +94,6 @@ const GenrePage = () => {
             Genres
           </Typography>
         </Box>
-        <Typography variant="body1" paragraph>
-          This page provides analytics and visualizations about movie genres, including top-performing
-          genres by revenue, awards, and critical reception. Users can explore trends in genre
-          popularity over time.
-        </Typography>
 
         <Box mb={3}>
           <Grid container spacing={2}>

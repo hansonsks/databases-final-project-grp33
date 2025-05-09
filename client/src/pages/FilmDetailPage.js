@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Container, Typography, CircularProgress, Paper,
   Divider, Box, Chip, Rating, Alert, Button,
-  Snackbar, List, ListItem, ListItemText
+  Snackbar, List, ListItem, ListItemText, Link
 } from '@mui/material';
 import FavoriteIcon from '@mui/icons-material/Favorite';
 import FavoriteBorderIcon from '@mui/icons-material/FavoriteBorder';
@@ -17,6 +17,7 @@ import { AuthContext } from '../context/AuthContext';
 
 const FilmDetailPage = () => {
   const { filmId } = useParams();
+  const navigate = useNavigate();
   const [film, setFilm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -28,32 +29,17 @@ const FilmDetailPage = () => {
   useEffect(() => {
     const loadFilm = async () => {
       try {
-        // In a real implementation, you would fetch from your API
-        // Here I'm creating mock data for demonstration
-        const mockFilm = {
-          tconst: filmId,
-          title: "The Shawshank Redemption",
-          year: 1994,
-          genres: ["Drama"],
-          director: "Frank Darabont",
-          averageRating: 9.3,
-          revenue: 28341469,
-          budget: 25000000,
-          awards: [
-            { category: "Best Actor", year: 1995, nominee: "Morgan Freeman", isWinner: false },
-            { category: "Best Screenplay", year: 1995, nominee: "Frank Darabont", isWinner: false },
-            { category: "Best Picture", year: 1995, isWinner: false }
-          ],
-          cast: [
-            { nconst: "nm0000209", name: "Tim Robbins", role: "Andy Dufresne" },
-            { nconst: "nm0000151", name: "Morgan Freeman", role: "Ellis Boyd 'Red' Redding" }
-          ]
-        };
+        setLoading(true);
+        const response = await api.get(`/api/films/${filmId}`);
         
-        setFilm(mockFilm);
+        if (!response.data || !response.data.film) {
+          throw new Error('Film data not found in response');
+        }
+        
+        setFilm(response.data.film);
       } catch (err) {
         console.error('Failed to load film:', err);
-        setError('Failed to load film details');
+        setError('Failed to load film details. The film ID may be invalid or the server is unavailable.');
       } finally {
         setLoading(false);
       }
@@ -67,7 +53,7 @@ const FilmDetailPage = () => {
         
         // Check if this film is in favorites
         const isInFavorites = (response.data.films || []).some(
-          f => f.item_id === parseInt(filmId)
+          f => f.item_id === parseInt(filmId) || f.item_id === filmId
         );
         setInFavorites(isInFavorites);
       } catch (err) {
@@ -92,7 +78,9 @@ const FilmDetailPage = () => {
     try {
       if (inFavorites) {
         // Find the favorite_id
-        const favorite = favorites.find(f => f.item_id === parseInt(filmId));
+        const favorite = favorites.find(f => 
+          f.item_id === parseInt(filmId) || f.item_id === filmId
+        );
         if (favorite) {
           await api.delete(`/api/users/favorites/${favorite.favorite_id}`);
           setSnackbar({
@@ -103,7 +91,7 @@ const FilmDetailPage = () => {
           setInFavorites(false);
         }
       } else {
-        await api.post('/api/users/favorites/films', { itemId: parseInt(filmId) });
+        await api.post('/api/users/favorites/films', { itemId: filmId });
         setSnackbar({
           open: true,
           message: 'Added to favorites',
@@ -123,6 +111,18 @@ const FilmDetailPage = () => {
 
   const handleCloseSnackbar = () => {
     setSnackbar({ ...snackbar, open: false });
+  };
+
+  const navigateToActor = (actorId) => {
+    if (actorId) {
+      navigate(`/actors/${actorId}`);
+    }
+  };
+
+  const navigateToDirector = (directorId) => {
+    if (directorId) {
+      navigate(`/directors/${directorId}`);
+    }
   };
 
   if (loading) {
@@ -162,7 +162,7 @@ const FilmDetailPage = () => {
         </Box>
 
         <Box sx={{ my: 3 }}>
-          {film.genres.map(genre => (
+          {film.genres && film.genres.map(genre => (
             <Chip key={genre} label={genre} sx={{ mr: 1, mb: 1 }} />
           ))}
         </Box>
@@ -170,18 +170,40 @@ const FilmDetailPage = () => {
         <Box display="flex" sx={{ mb: 3 }}>
           <Box sx={{ mr: 4 }}>
             <Typography variant="subtitle2" color="text.secondary">Director</Typography>
-            <Typography variant="body1">{film.director}</Typography>
+            <Typography variant="body1">
+              {film.directors && film.directors.length > 0 ? (
+                film.directors.map((director, index) => (
+                  <React.Fragment key={director.nconst}>
+                    <Link 
+                      component="button" 
+                      variant="body1" 
+                      onClick={() => navigateToDirector(director.nconst)}
+                      sx={{ textDecoration: 'none' }}
+                    >
+                      {director.name}
+                    </Link>
+                    {index < film.directors.length - 1 ? ', ' : ''}
+                  </React.Fragment>
+                ))
+              ) : (
+                'Unknown'
+              )}
+            </Typography>
           </Box>
           <Box sx={{ mr: 4 }}>
             <Typography variant="subtitle2" color="text.secondary">IMDb Rating</Typography>
             <Box display="flex" alignItems="center">
-              <Rating value={film.averageRating / 2} precision={0.1} readOnly />
-              <Typography variant="body1" sx={{ ml: 1 }}>{film.averageRating}/10</Typography>
+              <Rating value={(film.averagerating || 0) / 2} precision={0.1} readOnly />
+              <Typography variant="body1" sx={{ ml: 1 }}>
+                {film.averagerating ? `${film.averagerating}/10` : 'Not rated'}
+              </Typography>
             </Box>
           </Box>
           <Box>
             <Typography variant="subtitle2" color="text.secondary">Box Office</Typography>
-            <Typography variant="body1">${film.revenue.toLocaleString()}</Typography>
+            <Typography variant="body1">
+              {film.revenue ? `$${film.revenue.toLocaleString()}` : 'Unknown'}
+            </Typography>
           </Box>
         </Box>
 
@@ -192,16 +214,29 @@ const FilmDetailPage = () => {
             <PersonIcon sx={{ mr: 1, color: 'primary.main' }} />
             <Typography variant="h6">Cast</Typography>
           </Box>
-          <List>
-            {film.cast.map((actor) => (
-              <ListItem key={actor.nconst} sx={{ py: 1 }}>
-                <ListItemText 
-                  primary={actor.name} 
-                  secondary={`as ${actor.role}`} 
-                />
-              </ListItem>
-            ))}
-          </List>
+          {film.cast && film.cast.length > 0 ? (
+            <List>
+              {film.cast.map((actor) => (
+                <ListItem key={actor.nconst} sx={{ py: 1 }}>
+                  <ListItemText 
+                    primary={
+                      <Link 
+                        component="button" 
+                        variant="body1"
+                        onClick={() => navigateToActor(actor.nconst)}
+                        sx={{ textDecoration: 'none' }}
+                      >
+                        {actor.name}
+                      </Link>
+                    } 
+                    secondary={actor.role} 
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Typography variant="body1">No cast information available</Typography>
+          )}
         </Box>
 
         <Box sx={{ mb: 4 }}>
@@ -209,40 +244,50 @@ const FilmDetailPage = () => {
             <EmojiEventsIcon sx={{ mr: 1, color: 'primary.main' }} />
             <Typography variant="h6">Awards</Typography>
           </Box>
-          <List>
-            {film.awards.map((award, index) => (
-              <ListItem key={index} sx={{ py: 1 }}>
-                <ListItemText 
-                  primary={award.category} 
-                  secondary={`${award.year} - ${award.isWinner ? 'Winner' : 'Nominated'} ${award.nominee ? `- ${award.nominee}` : ''}`} 
-                />
-              </ListItem>
-            ))}
-          </List>
+          {film.awards && film.awards.length > 0 ? (
+            <List>
+              {film.awards.map((award, index) => (
+                <ListItem key={index} sx={{ py: 1 }}>
+                  <ListItemText 
+                    primary={award.category} 
+                    secondary={`${award.award_year} - ${award.iswinner ? 'Winner' : 'Nominated'}`} 
+                  />
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <Typography variant="body1">No awards information available</Typography>
+          )}
         </Box>
 
-        <Box>
-          <Box display="flex" alignItems="center" mb={2}>
-            <AttachMoneyIcon sx={{ mr: 1, color: 'primary.main' }} />
-            <Typography variant="h6">Financial Information</Typography>
+        {(film.budget || film.revenue) && (
+          <Box>
+            <Box display="flex" alignItems="center" mb={2}>
+              <AttachMoneyIcon sx={{ mr: 1, color: 'primary.main' }} />
+              <Typography variant="h6">Financial Information</Typography>
+            </Box>
+            <Box display="flex">
+              {film.budget > 0 && (
+                <Box sx={{ mr: 4 }}>
+                  <Typography variant="subtitle2" color="text.secondary">Budget</Typography>
+                  <Typography variant="body1">${film.budget.toLocaleString()}</Typography>
+                </Box>
+              )}
+              {film.revenue > 0 && (
+                <Box sx={{ mr: 4 }}>
+                  <Typography variant="subtitle2" color="text.secondary">Revenue</Typography>
+                  <Typography variant="body1">${film.revenue.toLocaleString()}</Typography>
+                </Box>
+              )}
+              {film.roi && (
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">Return on Investment</Typography>
+                  <Typography variant="body1">{film.roi}%</Typography>
+                </Box>
+              )}
+            </Box>
           </Box>
-          <Box display="flex">
-            <Box sx={{ mr: 4 }}>
-              <Typography variant="subtitle2" color="text.secondary">Budget</Typography>
-              <Typography variant="body1">${film.budget.toLocaleString()}</Typography>
-            </Box>
-            <Box sx={{ mr: 4 }}>
-              <Typography variant="subtitle2" color="text.secondary">Revenue</Typography>
-              <Typography variant="body1">${film.revenue.toLocaleString()}</Typography>
-            </Box>
-            <Box>
-              <Typography variant="subtitle2" color="text.secondary">Return on Investment</Typography>
-              <Typography variant="body1">
-                {((film.revenue / film.budget - 1) * 100).toFixed(1)}%
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
+        )}
       </Paper>
 
       <Snackbar 

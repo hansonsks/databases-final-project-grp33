@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import api from '../utils/api';
@@ -133,7 +134,8 @@ const Dashboard = () => {
       
       // Try to fetch real film data
       let filmData;
-
+      let filmId = null;
+  
       try {
         let searchResponse;
         if (film.awardid) {
@@ -142,6 +144,27 @@ const Dashboard = () => {
               awardid : film.awardid
             }
           });
+          
+          if (searchResponse.data.film && searchResponse.data.film[0]) {
+            const searchedFilm = searchResponse.data.film[0];
+            filmId = searchedFilm.tconst; // Save the film ID
+            
+            filmData = {          
+              tconst: searchedFilm.tconst, // Include the tconst
+              title: film.title || film.filmtitle,
+              year: film.year,
+              director: searchedFilm.directors || 'Unknown Director',
+              cast: searchedFilm.actors || ['Top Cast Information Not Available'],
+              awards: [
+                { category: searchedFilm.category, year: film.year, isWinner: film.iswinner }
+              ],
+              ratings: { imdb: searchedFilm.imdb_rating || 'N/A' },
+              boxOffice: searchedFilm.box_office || 'N/A'
+            };
+          }
+        } else if (film.filmid) {
+          // Direct ID access if available
+          filmId = film.filmid;
         } else {
           searchResponse = await api.get('/api/awards/search-by-other', { 
             params: { 
@@ -151,26 +174,40 @@ const Dashboard = () => {
               iswinner: film.iswinner
             }
           });
+          
+          if (searchResponse.data.film && searchResponse.data.film[0]) {
+            const searchedFilm = searchResponse.data.film[0];
+            filmId = searchedFilm.tconst; // Save the film ID
+            
+            filmData = {          
+              tconst: searchedFilm.tconst, // Include the tconst
+              title: film.title || film.filmtitle,
+              year: film.year,
+              director: searchedFilm.directors || 'Unknown Director',
+              cast: searchedFilm.actors || ['Top Cast Information Not Available'],
+              awards: [
+                { category: searchedFilm.category, year: film.year, isWinner: film.iswinner }
+              ],
+              ratings: { imdb: searchedFilm.imdb_rating || 'N/A' },
+              boxOffice: searchedFilm.box_office || 'N/A'
+            };
+          }
         }
-        const searchedFilm = searchResponse.data.film[0];
-        filmData = {          
-          title: film.title || film.filmtitle,
-          year: film.year,
-          director: searchedFilm.directors || 'Unknown Director',
-          cast: searchedFilm.actors || ['Top Cast Information Not Available'],
-          awards: [
-            { category: searchedFilm.category, year: film.year, isWinner: film.iswinner }
-          ],
-          ratings: { imdb: searchedFilm.imdb_rating || 'N/A' },
-          boxOffice: searchedFilm.box_office || 'N/A'
-        };
       } catch (searchErr) {
         console.error('Error searching for film:', searchErr);
       }
       
-      // If we couldn't get real data, use enhanced mock data
+      // If we couldn't get real data or filmId, check for filmid directly
       if (!filmData) {
+        // Try to extract ID from various possible fields
+        if (!filmId) {
+          filmId = film.filmid || film.tconst || 
+                  (film.selectedFilm && film.selectedFilm.filmid) || 
+                  (film.selectedFilm && film.selectedFilm.tconst);
+        }
+        
         filmData = {
+          tconst: filmId, // Include any ID we found
           title: film.title,
           year: film.year,
           director: film.director || 'Unknown Director',
@@ -183,6 +220,7 @@ const Dashboard = () => {
         };
       }
       
+      console.log("Film details with ID:", filmData);
       setFilmDetails(filmData);
       setLoadingFilmDetails(false);
       
@@ -225,9 +263,17 @@ const Dashboard = () => {
     try {
       setLoadingCategoryFilms(true);
       
-      // Fetch real category films data from API
+      // If category already has films array from the API, use it
+      if (category.films && category.films.length > 0) {
+        console.log("Using films from category data:", category.films);
+        setCategoryFilms(category.films);
+        setLoadingCategoryFilms(false);
+        return;
+      }
+      
+      // Otherwise fetch films for this category from API
       const response = await api.get('/api/awards/by-category', {
-        params: { category: category.category, limit: 10 }
+        params: { category: category.category, limit: 20 }
       });
       
       if (response.data && response.data.films) {
@@ -327,8 +373,8 @@ const Dashboard = () => {
 
       <Grid container spacing={4}>
         {/* Recent Oscar Winners */}
-        <Grid item xs={12} md={8}>
-          <Paper elevation={2} sx={{ p: 2, height: '100%' }}>
+        <Grid item xs={12} md={4}>
+          <Paper elevation={2} sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Box display="flex" alignItems="center" mb={2}>
               <EmojiEventsIcon sx={{ mr: 1, color: 'primary.main' }} />
               <Typography variant="h6">Recent Oscar Winners</Typography>
@@ -340,39 +386,46 @@ const Dashboard = () => {
             </Box>
             <Divider sx={{ mb: 2 }} />
             
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell><strong>Film</strong></TableCell>
-                    <TableCell><strong>Category</strong></TableCell>
-                    <TableCell><strong>Year</strong></TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {data?.recentWinners?.map((winner, index) => (
-                    <TableRow 
-                      key={index} 
-                      hover
-                      onClick={() => {
-                        handleOpenFilmDialog(winner);
-                      }}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell>{winner.title || winner.filmtitle}</TableCell>
-                      <TableCell>{winner.category}</TableCell>
-                      <TableCell>{winner.year}</TableCell>
+            <Box sx={{ overflowY: 'auto', flexGrow: 1, maxHeight: 400 }}>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>Film</strong></TableCell>
+                      <TableCell><strong>Category</strong></TableCell>
+                      <TableCell><strong>Year</strong></TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                  </TableHead>
+                  <TableBody>
+                    {data?.recentWinners?.map((winner, index) => (
+                      <TableRow 
+                        key={index} 
+                        hover
+                        onClick={() => {
+                          handleOpenFilmDialog(winner);
+                        }}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        <TableCell>{winner.title || winner.filmtitle}</TableCell>
+                        <TableCell>{winner.category}</TableCell>
+                        <TableCell>{winner.year}</TableCell>
+                      </TableRow>
+                    ))}
+                    {(!data?.recentWinners || data.recentWinners.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={3} align="center">No recent winners available</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
           </Paper>
         </Grid>
 
         {/* Top Categories */}
         <Grid item xs={12} md={4}>
-          <Paper elevation={2} sx={{ p: 2, height: '100%' }}>
+          <Paper elevation={2} sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Box display="flex" alignItems="center" mb={2}>
               <CategoryIcon sx={{ mr: 1, color: 'primary.main' }} />
               <Typography variant="h6">Top Oscar Categories</Typography>
@@ -384,21 +437,94 @@ const Dashboard = () => {
             </Box>
             <Divider sx={{ mb: 2 }} />
             
-            <List>
-              {data?.topCategories?.map((category, index) => (
-                <ListItem 
-                  key={index} 
-                  divider={index < data.topCategories.length - 1}
-                  button
-                  onClick={() => handleOpenCategoryDialog(category)}
-                >
-                  <ListItemText 
-                    primary={category.category} 
-                    secondary={`${category.award_count} awards`}
-                  />
-                </ListItem>
-              ))}
-            </List>
+            <Box sx={{ overflowY: 'auto', flexGrow: 1, maxHeight: 400 }}>
+              <List>
+                {data?.topCategories?.map((category, index) => (
+                  <ListItem 
+                    key={index} 
+                    divider={index < data.topCategories.length - 1}
+                    button
+                    onClick={() => handleOpenCategoryDialog(category)}
+                  >
+                    <ListItemText 
+                      primary={category.category} 
+                      secondary={`${category.award_count} awards`}
+                    />
+                  </ListItem>
+                ))}
+                {(!data?.topCategories || data.topCategories.length === 0) && (
+                  <ListItem>
+                    <ListItemText primary="No categories available" />
+                  </ListItem>
+                )}
+              </List>
+            </Box>
+          </Paper>
+        </Grid>
+        
+        {/* Highest Grossing Films - New Column */}
+        <Grid item xs={12} md={4}>
+          <Paper elevation={2} sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Box display="flex" alignItems="center" mb={2}>
+              <AttachMoneyIcon sx={{ mr: 1, color: 'primary.main' }} />
+              <Typography variant="h6">Top Box Office Films</Typography>
+              <Tooltip title="Click on any film to see more details">
+                <IconButton size="small" sx={{ ml: 1 }}>
+                  <InfoIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+            <Divider sx={{ mb: 2 }} />
+            
+            <Box sx={{ overflowY: 'auto', flexGrow: 1, maxHeight: 400 }}>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>Film</strong></TableCell>
+                      <TableCell align="right"><strong>Revenue</strong></TableCell>
+                      <TableCell align="right"><strong>Rating</strong></TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {data?.highestGrossing?.map((film, index) => (
+                      <TableRow 
+                        key={index} 
+                        hover
+                        onClick={() => handleOpenFilmDialog({
+                          title: film.title,
+                          year: film.year,
+                          tconst: film.tconst,
+                          director: film.director,
+                          averageRating: film.averagerating,
+                          revenue: film.revenue,
+                          won_oscar: film.won_oscar
+                        })}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        <TableCell>
+                          {film.title} {film.won_oscar && (
+                            <Tooltip title="Oscar Winner">
+                              <EmojiEventsIcon 
+                                fontSize="small" 
+                                sx={{ color: 'gold', verticalAlign: 'middle', ml: 1, width: 16, height: 16 }} 
+                              />
+                            </Tooltip>
+                          )}
+                        </TableCell>
+                        <TableCell align="right">${(film.revenue / 1000000).toFixed(1)}M</TableCell>
+                        <TableCell align="right">{film.averagerating?.toFixed(1) || 'N/A'}</TableCell>
+                      </TableRow>
+                    ))}
+                    {(!data?.highestGrossing || data.highestGrossing.length === 0) && (
+                      <TableRow>
+                        <TableCell colSpan={3} align="center">No box office data available</TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
           </Paper>
         </Grid>
 
@@ -571,34 +697,49 @@ const Dashboard = () => {
           {loadingCategoryFilms ? (
             renderLoadingDots()
           ) : categoryFilms.length > 0 ? (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell><strong>Film</strong></TableCell>
-                    <TableCell><strong>Year</strong></TableCell>
-                    <TableCell><strong>Result</strong></TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {categoryFilms.map((film, index) => (
-                    <TableRow 
-                      key={index} 
-                      hover
-                      onClick={() => {
-                        handleCloseCategoryDialog();
-                        handleOpenFilmDialog(film);
-                      }}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell>{film.title || film.filmtitle}</TableCell>
-                      <TableCell>{film.year}</TableCell>
-                      <TableCell>{film.isWinner || film.iswinner ? 'Winner' : 'Nominee'}</TableCell>
+            <Box sx={{ maxHeight: '60vh', overflow: 'auto' }}>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell><strong>Film</strong></TableCell>
+                      <TableCell><strong>Year</strong></TableCell>
+                      <TableCell><strong>Result</strong></TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                  </TableHead>
+                  <TableBody>
+                    {categoryFilms.map((film, index) => (
+                      <TableRow 
+                        key={index} 
+                        hover
+                        onClick={() => {
+                          handleCloseCategoryDialog();
+                          handleOpenFilmDialog({
+                            ...film,
+                            title: film.title || film.filmtitle,
+                            category: selectedCategory?.category
+                          });
+                        }}
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        <TableCell>{film.title || film.filmtitle}</TableCell>
+                        <TableCell>{film.year}</TableCell>
+                        <TableCell>
+                          {film.isWinner || film.iswinner ? (
+                            <Box display="flex" alignItems="center">
+                              <EmojiEventsIcon sx={{ color: 'gold', mr: 1, fontSize: '1rem' }} />
+                              Winner
+                            </Box>
+                          ) : (
+                            'Nominee'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
           ) : (
             <Typography>No films found for this category.</Typography>
           )}

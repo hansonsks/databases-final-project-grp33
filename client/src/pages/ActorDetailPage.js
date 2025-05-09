@@ -20,6 +20,11 @@ const ActorDetailPage = () => {
   const [favorites, setFavorites] = useState([]);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const { currentUser } = useContext(AuthContext);
+  const navigateToFilm = (filmId) => {
+    if (filmId) {
+      navigate(`/films/${filmId}`);
+    }
+  };
 
   useEffect(() => {
     const loadActor = async () => {
@@ -175,29 +180,54 @@ const ActorDetailPage = () => {
         <Divider sx={{ my: 3 }} />
         <Typography variant="h6">Filmography ({actor.movies?.length || 0} films)</Typography>
 
-        {actor.movies && actor.movies.map((movie, idx) => (
-          <Box key={idx} sx={{ my: 3 }}>
-            <Typography variant="subtitle1">
-              <strong>{movie.title}</strong> ({movie.year || 'N/A'})
-            </Typography>
-            <Typography>Rating: {movie.averagerating ? parseFloat(movie.averagerating).toFixed(1) : 'N/A'}</Typography>
-            <Typography>
-              Revenue: {movie.revenue && movie.revenue > 0 ? `$${Number(movie.revenue).toLocaleString()}` : 'Unknown'}
-            </Typography>
+        {actor.movies && actor.movies.length > 0 ? (
+          actor.movies.map((movie, idx) => (
+            <Box 
+              key={idx} 
+              sx={{ 
+                my: 3, 
+                p: 2, 
+                border: '1px solid #e0e0e0', 
+                borderRadius: 1, 
+                cursor: 'pointer',
+                transition: 'background-color 0.2s',
+                '&:hover': {
+                  backgroundColor: 'rgba(0, 0, 0, 0.03)'
+                }
+              }}
+              onClick={() => navigateToFilm(movie.tconst)}
+            >
+              <Typography variant="h6">
+                {movie.title} ({movie.year || 'N/A'})
+              </Typography>
+              <Typography>Rating: {movie.averagerating ? parseFloat(movie.averagerating).toFixed(1) : 'N/A'}</Typography>
+              <Typography>
+                Revenue: {movie.revenue && movie.revenue > 0 ? `$${Number(movie.revenue).toLocaleString()}` : 'Unknown'}
+              </Typography>
 
-            {movie.awards && movie.awards.length > 0 && (
-              <List dense>
-                {movie.awards.map((award, i) => (
-                  <ListItem key={i}>
-                    <ListItemText
-                      primary={`${award.category} (${award.year}) - ${award.iswinner ? 'Winner' : 'Nominated'}`}
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            )}
-          </Box>
-        ))}
+              {movie.awards && movie.awards.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mt: 1 }}>Awards:</Typography>
+                  <List dense>
+                    {movie.awards.map((award, i) => (
+                      award && (
+                        <ListItem key={i}>
+                          <ListItemText
+                            primary={`${award.category} (${award.year}) - ${award.iswinner ? 'Winner' : 'Nominated'}`}
+                          />
+                        </ListItem>
+                      )
+                    ))}
+                  </List>
+                </>
+              )}
+            </Box>
+          ))
+        ) : (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            No films found for this actor.
+          </Alert>
+        )}
       </Paper>
 
       <Snackbar 

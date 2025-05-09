@@ -9,6 +9,11 @@ import TheatersIcon from '@mui/icons-material/Theaters';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import LimitSelector from '../components/LimitSelector';
+import { Snackbar } from '@mui/material';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
 
 const FilmPage = () => {
   const [films, setFilms] = useState([]);
@@ -20,10 +25,18 @@ const FilmPage = () => {
   const [actorName, setActorName] = useState('Tom Hanks');
   const [actorSortBy, setActorSortBy] = useState('year');
   const [actorSortOrder, setActorSortOrder] = useState('desc');
+  const [sortOrder, setSortOrder] = useState('desc');
+  const toggleSortOrder = () => {
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  };
   const [yearStart, setYearStart] = useState(2000);
   const [yearEnd, setYearEnd] = useState(2023);
   const [limit, setLimit] = useState(10); // Default limit
   const [dotCount, setDotCount] = useState(1);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const handleCloseSnackbar = () => {
+    setSnackbar({ ...snackbar, open: false });
+  };
   
   // Column sorting states
   const [orderBy, setOrderBy] = useState('');
@@ -345,26 +358,30 @@ const FilmPage = () => {
   
   // Navigate to film details safely
   const navigateToFilm = (film) => {
-    console.log("Navigating to film:", film);
+    // Try to get the film ID from various possible properties
+    let filmId = null;
     
-    // Try to get the film ID
-    const filmId = film.tconst || film.filmid;
-    
-    if (!filmId || filmId === 'tt0000001') {
-      console.warn("Missing or default film ID:", filmId, "Film data:", film);
+    // Check all possible field names where the ID might be stored
+    if (film.tconst) {
+      filmId = film.tconst;
+    } else if (film.filmid) {
+      filmId = film.filmid;
+    } else if (film.imdb_id) {
+      filmId = film.imdb_id;
     }
     
-    // Only navigate if we have a valid ID
-    if (filmId && filmId !== 'tt0000001') {
+    if (filmId) {
+      console.log(`Navigating to film ID: ${filmId}`);
       navigate(`/films/${filmId}`);
     } else {
-      // If no valid ID, try to search by title
-      const title = film.title || film.film_title || film.primarytitle;
-      if (title) {
-        navigate(`/films?search=${encodeURIComponent(title)}`);
-      } else {
-        console.error("Cannot navigate - no valid ID or title:", film);
-      }
+      // If we really can't find an ID, log an error
+      console.error("Cannot navigate - no valid ID found:", film);
+      // Show an error message to the user
+      setSnackbar({
+        open: true,
+        message: 'Unable to view film details due to missing ID',
+        severity: 'error'
+      });
     }
   };
 
@@ -451,7 +468,13 @@ const FilmPage = () => {
                   <TableCell align="right">{typeof rating === 'number' ? rating.toFixed(1) : rating}</TableCell>
                   <TableCell align="right">${typeof budget === 'number' ? budget.toLocaleString() : budget}</TableCell>
                   <TableCell align="right">${typeof revenue === 'number' ? revenue.toLocaleString() : revenue}</TableCell>
-                  <TableCell align="right">{typeof roi === 'number' ? roi.toFixed(1) : roi}%</TableCell>
+                  <TableCell align="right">
+                    {typeof roi === 'number' 
+                      ? `${((roi) * 1).toFixed(1)}%` 
+                      : (typeof revenue === 'number' && typeof budget === 'number' && budget > 0)
+                        ? `${(((revenue / budget) - 1) * 100).toFixed(1)}%`
+                        : roi}
+                  </TableCell>
                 </TableRow>
               );
             })}
@@ -721,7 +744,7 @@ const FilmPage = () => {
               
               {orderBy && (
                 <Typography variant="body2" color="text.secondary">
-                  Sorted by: {orderBy.replace('_', ' ')} ({order === 'asc' ? 'ascending' : 'descending'})
+                  Sorted by: {orderBy.replaceAll('_', ' ')} ({order === 'asc' ? 'ascending' : 'descending'})
                 </Typography>
               )}
             </Box>
@@ -748,7 +771,16 @@ const FilmPage = () => {
           </>
         )}
       </Paper>
+      <Snackbar
+  open={snackbar.open}
+  autoHideDuration={6000}
+  onClose={handleCloseSnackbar}
+  message={snackbar.message}
+  severity={snackbar.severity}
+  anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+/>
     </Container>
+    
   );
 };
 

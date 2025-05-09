@@ -13,7 +13,7 @@ router.get('/highest-roi', async (req, res) => {
                     m.budget,
                     m.revenue,
                     CASE 
-                        WHEN m.budget > 0 THEN (m.revenue::float / m.budget)
+                        WHEN m.budget > 0 THEN ((m.revenue::float / m.budget) - 1) * 100
                         ELSE NULL
                     END AS roi
                 FROM 
@@ -54,6 +54,7 @@ router.get('/highest-roi', async (req, res) => {
                     film_details
             )
             SELECT 
+                yt.tconst,
                 yt.startyear AS year,
                 yt.primarytitle AS film_title,
                 yt.averagerating AS imdb_rating,
@@ -222,5 +223,111 @@ router.get('/top-by-genre/:genreName', async (req, res) => {
         res.status(500).json({ error: 'An error occurred while fetching top movies by genre' });
     }
 });
+
+router.get('/:filmId', async (req, res) => {
+    try {
+      const { filmId } = req.params;
+      
+      // Ensure filmId is properly formatted (remove 'tt' prefix if needed for numeric operations)
+      const filmIdForQuery = filmId.toString().replace(/^tt/, '');
+      
+      console.log(`Fetching film details for ID: ${filmIdForQuery}`);
+      
+      const query = `
+        WITH film_base AS (
+          SELECT
+            t.tconst,
+            t.primarytitle AS title,
+            t.startyear AS year,
+            t.genres,
+            r.averagerating,
+            r.numvotes,
+            m.budget,
+            m.revenue,
+            m.popularity
+          FROM
+            public.titlebasics t
+          LEFT JOIN
+            public.titleratings r ON t.tconst = r.tconst
+          LEFT JOIN
+            public.tmdb m ON t.tconst = m.imdb_id
+          WHERE
+            t.tconst = $1::integer
+        ),
+        film_awards AS (
+          SELECT
+            o.category,
+            o.year AS award_year,
+            o.iswinner,
+            unnest(o.nomineeids) AS nominee_id
+          FROM
+            public.theoscaraward o
+          WHERE
+            o.filmid = $1
+        ),
+        film_directors AS (
+          SELECT
+            n.nconst,
+            n.primaryname AS name
+          FROM
+            public.titleprincipals p
+          JOIN
+            public.namebasics n ON p.nconst = n.nconst
+          WHERE
+            p.tconst = $1 AND p.category = 'director'
+        ),
+        film_cast AS (
+          SELECT
+            p.nconst,
+            n.primaryname AS name,
+            p.category AS role
+          FROM
+            public.titleprincipals p
+          JOIN
+            public.namebasics n ON p.nconst = n.nconst
+          WHERE
+            p.tconst = $1 AND p.category IN ('actor', 'actress')
+          ORDER BY
+            p.ordering
+          LIMIT 10
+        )
+        SELECT
+          fb.*,
+          (SELECT json_agg(fa.*) FROM film_awards fa) AS awards,
+          (SELECT json_agg(fd.*) FROM film_directors fd) AS directors,
+          (SELECT json_agg(fc.*) FROM film_cast fc) AS cast
+        FROM
+          film_base fb
+      `;
+  
+      const result = await pool.query(query, [parseInt(filmIdForQuery, 10)]);
+      
+      if (result.rows.length === 0) {
+        console.log(`No film found with ID: ${filmIdForQuery}`);
+        return res.status(404).json({ error: 'Film not found' });
+      }
+      
+      // Process the data to handle null arrays
+      const film = result.rows[0];
+      console.log(`Found film: ${film.title}, Revenue: ${film.revenue}, Budget: ${film.budget}`);
+      
+      // Ensure arrays are never null
+      film.awards = film.awards || [];
+      film.directors = film.directors || [];
+      film.cast = film.cast || [];
+      
+      // Calculate ROI if budget and revenue are available
+      if (film.budget && film.budget > 0 && film.revenue) {
+        // Correctly calculate ROI percentage
+        // ROI = ((Revenue - Budget) / Budget) * 100
+        film.roi = parseFloat(((film.revenue / film.budget) - 1) * 100).toFixed(2);
+      }
+      
+      res.json({ film });
+    } catch (err) {
+      console.error('Error fetching film details:', err);
+      res.status(500).json({ error: 'An error occurred while fetching film details' });
+    }
+  });
 
 module.exports = router;

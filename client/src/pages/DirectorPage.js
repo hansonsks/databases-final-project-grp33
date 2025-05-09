@@ -247,8 +247,8 @@ const DirectorPage = () => {
             </Grid>
 
             {sortBy === 'decade' && (
-              <Grid item xs={12} md={6}>
-                <FormControl fullWidth>
+              <Grid item xs={12} md={6} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <FormControl sx={{ minWidth: 100 }}>
                   <InputLabel>Select Decade</InputLabel>
                   <Select value={decade || 2010} label="Select Decade" onChange={(e) => setDecade(e.target.value)}>
                     {decades.map((d) => (

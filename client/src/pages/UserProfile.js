@@ -327,7 +327,7 @@ const UserProfile = () => {
     <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
       <Grid container spacing={3}>
         {/* Profile Information */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12}>
           <Paper elevation={3} sx={{ p: 3 }}>
             <Typography variant="h5" gutterBottom>
               Profile Information
@@ -346,62 +346,74 @@ const UserProfile = () => {
             )}
             
             <Box component="form" onSubmit={handleSubmit} noValidate>
-              <TextField
-                margin="normal"
-                required
-                fullWidth
-                id="name"
-                label="Full Name"
-                name="name"
-                autoComplete="name"
-                value={formData.name}
-                onChange={handleChange}
-              />
-              <TextField
-                margin="normal"
-                required
-                fullWidth
-                id="email"
-                label="Email Address"
-                name="email"
-                autoComplete="email"
-                value={formData.email}
-                onChange={handleChange}
-              />
-              <TextField
-                margin="normal"
-                fullWidth
-                id="username"
-                label="Username"
-                name="username"
-                value={profile?.username || ''}
-                disabled
-              />
-              <TextField
-                margin="normal"
-                fullWidth
-                id="joinDate"
-                label="Member Since"
-                name="joinDate"
-                value={new Date(profile?.joinDate).toLocaleDateString()}
-                disabled
-              />
-              <Button
-                type="submit"
-                fullWidth
-                variant="contained"
-                sx={{ mt: 3, mb: 2 }}
-                disabled={updating}
-              >
-                {updating ? 'Updating...' : 'Update Profile'}
-              </Button>
+              <Grid container spacing={2}>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    margin="normal"
+                    required
+                    fullWidth
+                    id="name"
+                    label="Full Name"
+                    name="name"
+                    autoComplete="name"
+                    value={formData.name}
+                    onChange={handleChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    margin="normal"
+                    required
+                    fullWidth
+                    id="email"
+                    label="Email Address"
+                    name="email"
+                    autoComplete="email"
+                    value={formData.email}
+                    onChange={handleChange}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    margin="normal"
+                    fullWidth
+                    id="username"
+                    label="Username"
+                    name="username"
+                    value={profile?.username || ''}
+                    disabled
+                  />
+                </Grid>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    margin="normal"
+                    fullWidth
+                    id="joinDate"
+                    label="Member Since"
+                    name="joinDate"
+                    value={new Date(profile?.joinDate).toLocaleDateString()}
+                    disabled
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <Button
+                    type="submit"
+                    fullWidth
+                    variant="contained"
+                    sx={{ mt: 3, mb: 2 }}
+                    disabled={updating}
+                  >
+                    {updating ? 'Updating...' : 'Update Profile'}
+                  </Button>
+                </Grid>
+              </Grid>
             </Box>
           </Paper>
         </Grid>
         
         {/* Favorites */}
-        <Grid item xs={12} md={6}>
-          <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
+        <Grid item xs={12}>
+          <Paper elevation={3} sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Typography variant="h5" gutterBottom>
               Your Favorites
             </Typography>
@@ -411,171 +423,235 @@ const UserProfile = () => {
                 icon={<PersonIcon />} 
                 label={`${favorites.actors?.length || 0} Actors`} 
                 color="primary" 
-                variant="outlined"
-                sx={{ mr: 1 }}
+                variant={favoriteTab === 0 ? "filled" : "outlined"}
+                onClick={() => setFavoriteTab(0)}
+                sx={{ mr: 1, mb: 1 }}
               />
               <Chip 
                 icon={<DirectorChairIcon />} 
                 label={`${favorites.directors?.length || 0} Directors`} 
                 color="secondary" 
-                variant="outlined"
-                sx={{ mr: 1 }}
+                variant={favoriteTab === 1 ? "filled" : "outlined"}
+                onClick={() => setFavoriteTab(1)}
+                sx={{ mr: 1, mb: 1 }}
               />
               <Chip 
                 icon={<MovieIcon />} 
                 label={`${favorites.films?.length || 0} Films`} 
                 color="info" 
-                variant="outlined"
+                variant={favoriteTab === 2 ? "filled" : "outlined"}
+                onClick={() => setFavoriteTab(2)}
+                sx={{ mb: 1 }}
               />
             </Box>
             
             <Divider sx={{ my: 2 }} />
             
-            <Tabs value={favoriteTab} onChange={handleFavoriteTabChange} sx={{ mb: 2 }}>
-              <Tab label="Actors" />
-              <Tab label="Directors" />
-              <Tab label="Films" />
-            </Tabs>
-
-            {loadingFavorites ? (
-              <Box display="flex" justifyContent="center" alignItems="center" height="200px">
-                <CircularProgress />
-              </Box>
-            ) : (
-              <>
-                {/* Actors Tab */}
-                {favoriteTab === 0 && (
-                  <Box>
-                    {favorites.actors?.length > 0 ? (
-                      <List>
-                        {favorites.actors.map((actor) => (
-                          <ListItem
-                            key={actor.favorite_id || actor.item_id}
-                            secondaryAction={
-                              <IconButton 
-                                edge="end" 
-                                aria-label="delete"
-                                onClick={() => handleRemoveFavorite(actor.favorite_id)}
-                              >
-                                <DeleteIcon />
-                              </IconButton>
-                            }
-                          >
-                            <ListItemAvatar>
-                              <Avatar component={RouterLink} to={`/actors/${actor.item_id}`}>
-                                <PersonIcon />
-                              </Avatar>
-                            </ListItemAvatar>
-                            <ListItemText 
-                              primary={
-                                <RouterLink to={`/actors/${actor.item_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                  {actor.name || actor.primaryname || "Unknown Actor"}
-                                </RouterLink>
-                              } 
-                            />
-                          </ListItem>
-                        ))}
-                      </List>
-                    ) : (
-                      <Typography variant="body1" align="center">
-                        You haven't added any actors to your favorites yet.
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-                
-                {/* Directors Tab */}
-                {favoriteTab === 1 && (
-                  <Box>
-                    {favorites.directors?.length > 0 ? (
-                      <List>
-                        {favorites.directors.map((director) => (
-                          <ListItem
-                            key={director.favorite_id || director.item_id}
-                            secondaryAction={
-                              <IconButton 
-                                edge="end" 
-                                aria-label="delete"
-                                onClick={() => handleRemoveFavorite(director.favorite_id)}
-                              >
-                                <DeleteIcon />
-                              </IconButton>
-                            }
-                          >
-                            <ListItemAvatar>
-                              <Avatar component={RouterLink} to={`/directors/${director.item_id}`}>
-                                <DirectorChairIcon />
-                              </Avatar>
-                            </ListItemAvatar>
-                            <ListItemText 
-                              primary={
-                                <RouterLink to={`/directors/${director.item_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                  {director.name || director.primaryname || "Unknown Director"}
-                                </RouterLink>
-                              } 
-                            />
-                          </ListItem>
-                        ))}
-                      </List>
-                    ) : (
-                      <Typography variant="body1" align="center">
-                        You haven't added any directors to your favorites yet.
-                      </Typography>
-                    )}
-                  </Box>
-                )}
-                
-                {/* Films Tab */}
-                {favoriteTab === 2 && (
-                  <Box>
-                    {favorites.films?.length > 0 ? (
-                      <List>
-                        {favorites.films.map((film) => (
-                          <ListItem
-                            key={film.favorite_id || film.item_id}
-                            secondaryAction={
-                              <IconButton 
-                                edge="end" 
-                                aria-label="delete"
-                                onClick={() => handleRemoveFavorite(film.favorite_id)}
-                              >
-                                <DeleteIcon />
-                              </IconButton>
-                            }
-                          >
-                            <ListItemAvatar>
-                              <Avatar component={RouterLink} to={`/films/${film.item_id}`}>
-                                <MovieIcon />
-                              </Avatar>
-                            </ListItemAvatar>
-                            <ListItemText 
-                              primary={
-                                <RouterLink to={`/films/${film.item_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                                  {film.title || film.primarytitle || "Unknown Film"}
-                                </RouterLink>
+            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minHeight: 400, overflow: 'hidden' }}>
+              {loadingFavorites ? (
+                <Box display="flex" justifyContent="center" alignItems="center" height="200px">
+                  <CircularProgress />
+                </Box>
+              ) : (
+                <>
+                  {/* Actors Tab */}
+                  {favoriteTab === 0 && (
+                    <Box sx={{ flexGrow: 1, overflow: 'auto', maxHeight: 400 }}>
+                      {favorites.actors?.length > 0 ? (
+                        <List>
+                          {favorites.actors.map((actor) => (
+                            <ListItem
+                              key={actor.favorite_id || actor.item_id}
+                              secondaryAction={
+                                <IconButton 
+                                  edge="end" 
+                                  aria-label="delete"
+                                  onClick={() => handleRemoveFavorite(actor.favorite_id)}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
                               }
-                              secondary={film.year ? `(${film.year})` : ''} 
-                            />
-                          </ListItem>
-                        ))}
-                      </List>
-                    ) : (
-                      <Typography variant="body1" align="center">
-                        You haven't added any films to your favorites yet.
+                            >
+                              <ListItemAvatar>
+                                <Avatar component={RouterLink} to={`/actors/${actor.item_id}`}>
+                                  <PersonIcon />
+                                </Avatar>
+                              </ListItemAvatar>
+                              <ListItemText 
+                                primary={
+                                  <RouterLink to={`/actors/${actor.item_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                    {actor.name || actor.primaryname || "Unknown Actor"}
+                                  </RouterLink>
+                                } 
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', p: 3 }}>
+                          <PersonIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2, opacity: 0.3 }} />
+                          <Typography variant="body1" align="center" color="text.secondary">
+                            You haven't added any actors to your favorites yet.
+                          </Typography>
+                          <Button 
+                            variant="contained" 
+                            component={RouterLink}
+                            to="/actors"
+                            sx={{ mt: 2 }}
+                          >
+                            Browse Actors
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                  
+                  {/* Directors Tab */}
+                  {favoriteTab === 1 && (
+                    <Box sx={{ flexGrow: 1, overflow: 'auto', maxHeight: 400 }}>
+                      {favorites.directors?.length > 0 ? (
+                        <List>
+                          {favorites.directors.map((director) => (
+                            <ListItem
+                              key={director.favorite_id || director.item_id}
+                              secondaryAction={
+                                <IconButton 
+                                  edge="end" 
+                                  aria-label="delete"
+                                  onClick={() => handleRemoveFavorite(director.favorite_id)}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              }
+                            >
+                              <ListItemAvatar>
+                                <Avatar component={RouterLink} to={`/directors/${director.item_id}`}>
+                                  <DirectorChairIcon />
+                                </Avatar>
+                              </ListItemAvatar>
+                              <ListItemText 
+                                primary={
+                                  <RouterLink to={`/directors/${director.item_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                    {director.name || director.primaryname || "Unknown Director"}
+                                  </RouterLink>
+                                } 
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', p: 3 }}>
+                          <DirectorChairIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2, opacity: 0.3 }} />
+                          <Typography variant="body1" align="center" color="text.secondary">
+                            You haven't added any directors to your favorites yet.
+                          </Typography>
+                          <Button 
+                            variant="contained" 
+                            component={RouterLink}
+                            to="/directors"
+                            sx={{ mt: 2 }}
+                          >
+                            Browse Directors
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                  
+                  {/* Films Tab */}
+                  {favoriteTab === 2 && (
+                    <Box sx={{ flexGrow: 1, overflow: 'auto', maxHeight: 400 }}>
+                      {favorites.films?.length > 0 ? (
+                        <List>
+                          {favorites.films.map((film) => (
+                            <ListItem
+                              key={film.favorite_id || film.item_id}
+                              secondaryAction={
+                                <IconButton 
+                                  edge="end" 
+                                  aria-label="delete"
+                                  onClick={() => handleRemoveFavorite(film.favorite_id)}
+                                >
+                                  <DeleteIcon />
+                                </IconButton>
+                              }
+                            >
+                              <ListItemAvatar>
+                                <Avatar component={RouterLink} to={`/films/${film.item_id}`}>
+                                  <MovieIcon />
+                                </Avatar>
+                              </ListItemAvatar>
+                              <ListItemText 
+                                primary={
+                                  <RouterLink to={`/films/${film.item_id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+                                    {film.title || film.primarytitle || "Unknown Film"}
+                                  </RouterLink>
+                                }
+                                secondary={film.year ? `(${film.year})` : ''} 
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      ) : (
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', p: 3 }}>
+                          <MovieIcon sx={{ fontSize: 60, color: 'text.secondary', mb: 2, opacity: 0.3 }} />
+                          <Typography variant="body1" align="center" color="text.secondary">
+                            You haven't added any films to your favorites yet.
+                          </Typography>
+                          <Button 
+                            variant="contained" 
+                            component={RouterLink}
+                            to="/films"
+                            sx={{ mt: 2 }}
+                          >
+                            Browse Films
+                          </Button>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                  
+                  {(favorites.actors?.length === 0 && 
+                    favorites.directors?.length === 0 && 
+                    favorites.films?.length === 0) && (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '300px' }}>
+                      <Typography variant="h6" color="text.secondary" gutterBottom>
+                        No Favorites Yet
                       </Typography>
-                    )}
-                  </Box>
-                )}
-                
-                {(favorites.actors?.length === 0 && 
-                  favorites.directors?.length === 0 && 
-                  favorites.films?.length === 0) && (
-                  <Typography variant="body1" sx={{ mt: 2, textAlign: 'center' }}>
-                    You haven't added any favorites yet. Browse actors, directors, and films to add some!
-                  </Typography>
-                )}
-              </>
-            )}
+                      <Typography variant="body1" sx={{ mt: 2, textAlign: 'center', maxWidth: '80%', color: 'text.secondary' }}>
+                        Start building your collection by exploring actors, directors, and films and adding them to your favorites!
+                      </Typography>
+                      <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+                        <Button 
+                          variant="contained" 
+                          component={RouterLink} 
+                          to="/actors"
+                          startIcon={<PersonIcon />}
+                        >
+                          Actors
+                        </Button>
+                        <Button 
+                          variant="contained" 
+                          component={RouterLink} 
+                          to="/directors"
+                          startIcon={<DirectorChairIcon />}
+                        >
+                          Directors
+                        </Button>
+                        <Button 
+                          variant="contained" 
+                          component={RouterLink} 
+                          to="/films"
+                          startIcon={<MovieIcon />}
+                        >
+                          Films
+                        </Button>
+                      </Box>
+                    </Box>
+                  )}
+                </>
+              )}
+            </Box>
           </Paper>
         </Grid>
       </Grid>
