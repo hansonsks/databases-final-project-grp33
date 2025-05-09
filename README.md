@@ -134,12 +134,14 @@ The API provides the following endpoints:
 2. Set up environment variables:
    Create a `.env` file with the following variables:
    ```
-   DB_HOST=your_database_host
-   DB_NAME=your_database_name
-   DB_USER=your_database_user
-   DB_PASSWORD=your_database_password
-   DB_PORT=your_database_port
-   API_PORT=your_api_port
+   DB_HOST=cis4500-project.cgn0tb01jwfp.us-east-1.rds.amazonaws.com
+   DB_USER=postgres
+   DB_PASSWORD=AndyEmilyHansonOlivia
+   DB_PORT=5432
+   DB_NAME=postgres
+   API_PORT=8080
+   JWT_SECRET=AndyEmilyHansonOlivia
+   JWT_EXPIRY=24h
    ```
 
 3. Start the server:
